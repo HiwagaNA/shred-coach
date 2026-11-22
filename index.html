@@ -198,11 +198,10 @@ const RAW=[
   ["d2-hammer","","Hammer curl (rope or dumbbell)",2,10,15,5,"Last set failure",""]]],
  ["d3","Legs","Wed",[
   ["d3-seatcurl","","Seated leg curl",4,8,12,10,"1 RIR, last set failure","Lean forward for more stretch"],
-  ["d3-hack","","Hack squat or pendulum squat (or 45° leg press)",3,8,12,20,C2,"Deep as you can control; quads, glutes, adductors",1],
+  ["d3-hack","","Hack squat or pendulum squat (or 45° leg press)",4,8,12,20,C2,"Go deep: deep squats also grow the adductors and glutes",1],
   ["d3-legext","","Leg extension, seat reclined (~40° at hip)",4,10,15,10,"1 RIR; last set failure + LP","Reclining grows the rectus femoris more"],
   ["d3-rdl","","Dumbbell Romanian deadlift",3,8,12,5,C2,"Weight per dumbbell; hinge until hamstrings are fully stretched",1],
   ["d3-hipthrust","","Machine hip thrust (or dumbbell/plate hip thrust)",3,8,12,10,"1 RIR, last set failure","Pause 1 s at the top"],
-  ["d3-adduct","","Hip adduction machine",2,10,15,10,"Last set failure","Widest safe stretch"],
   ["d3-calf","","Standing calf raise",4,8,12,10,"Failure + LP","2 s pause in the stretch"]]],
  ["d4","Chest & Back","Fri",[
   ["d4-incdb","A1","Incline dumbbell press (30°)",3,8,12,5,C2,"Upper chest; weight per dumbbell"],
@@ -651,13 +650,14 @@ function renderPlan(){
    <div class="card"><h3>Training rules</h3><dl>
     <dt>Effort</dt><dd>Machine presses, pulldowns, rows, hack squat, RDL: stop 1–2 reps short every set. Isolation: last set to failure.<span class="src">${src("Refalo 2024","https://openrepository.aut.ac.nz/items/dbe641c7-a606-4e00-94bc-bb2fbe253afa/full")}</span></dd>
     <dt>Supersets</dt><dd>Same growth as straight sets in less time.<span class="src">${src("Sports Medicine 2025 meta-analysis","https://eprints.leedsbeckett.ac.uk/id/eprint/11908")}</span></dd>
-    <dt>Volume while cutting</dt><dd>Keep sets as written (about 14–16 hard sets per muscle a week).<span class="src">${src("Roth 2023","https://myoton.com/publication/resistance-training-volume-does-not-influence-lean-mass-preservation-during-energy-restriction-in-trained-males/")}</span></dd>
+    <dt>Volume while cutting</dt><dd>Keep sets as written: about 14–16 direct hard sets a week for upper-body muscles and 7–8 for quads and hamstrings, never more than ~11 for one muscle in a session, past which extra sets add little.<span class="src">${src("Remmert 2025: sets per session","https://sportrxiv.org/index.php/server/preprint/view/537")} · ${src("Roth 2023","https://myoton.com/publication/resistance-training-volume-does-not-influence-lean-mass-preservation-during-energy-restriction-in-trained-males/")}</span></dd>
     <dt>Tempo and rest</dt><dd>Control the lowering (~2 s), pause in the stretch. ~90 s between rounds, 2–3 min on leg compounds.<span class="src">${src("Singer 2024","https://doaj.org/article/18363f4031e0487793db2084bee23f38")}</span></dd>
     <dt>Log honestly</dt><dd>People usually have about 1 more rep left than they think. Consistent effort keeps targets accurate.<span class="src">${src("Halperin 2022","https://sportrxiv.org/index.php/server/preprint/view/67")}</span></dd>
    </dl></div>
    <div class="card"><h3>Fat loss</h3><dl>
     <dt>Rate</dt><dd>1% of bodyweight a week at 15%+ body fat, slower as you get leaner.<span class="src">${src("Garthe 2011","https://lida.sport-iat.de/ta/Record/4017680?lng=en")} · ${src("Helms 2014","https://pmc.ncbi.nlm.nih.gov/articles/PMC4033492/")}</span></dd>
     <dt>Cardio</dt><dd>Steps daily; 2–3 cycling or incline-walk sessions, never right before legs.<span class="src">${src("Lundberg 2022","https://biolayne.com/reps/issue-8/concurrent-training-cardio-will-probably-not-kill-your-gains/")}</span></dd>
+    <dt>Deloads</dt><dd>None scheduled: a planned week off didn't add growth and slightly cost strength. Take an easy week (half the sets) only if joints ache or you're weaker 2 weeks running.<span class="src">${src("Coleman 2024","https://peerj.com/articles/16777")}</span></dd>
     <dt>Supplements</dt><dd>Creatine 3–5 g a day; caffeine before training if you like it.</dd>
    </dl></div>
    <div class="card"><h3>Your data</h3><p class="small muted">Your log is saved only on this phone and works with no internet. Back it up every week or so, and keep the app on your Home Screen so iPhone doesn't clear it.${lastBackup()?" Last backup: "+new Date(lastBackup()).toLocaleDateString()+".":""}</p>
