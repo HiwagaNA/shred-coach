@@ -108,6 +108,14 @@ button{cursor:pointer}
 .hist{padding:8px 14px 12px;border-top:1px solid var(--line);overflow-x:auto}
 .hist table{border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;width:100%}
 .hist th,.hist td{padding:4px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+.meta{font-size:12.5px;color:var(--muted);line-height:1.4}.meta .bad{color:var(--bad)}
+.linkbtn.plain{color:inherit;font:inherit;text-decoration:underline dotted;text-underline-offset:2px}
+.ex-h .nm .grow{flex:1;min-width:0}
+.set .tg.dim{color:var(--muted);font-size:17px;font-weight:500}
+.notice.good{background:var(--good-bg);color:var(--good)}
+details.fold>summary{cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between}
+details.fold>summary::after{content:"▾";color:var(--muted)}details.fold[open]>summary{margin-bottom:10px}details.fold[open]>summary::after{content:"▴"}
+details.fold>summary::-webkit-details-marker{display:none}
 .linkbtn{background:none;border:0;color:var(--accent);font-weight:600;font-size:13px;padding:0}
 /* forms + tables */
 .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
@@ -299,6 +307,8 @@ function RA(w,e){ if(!(w>0))return 0; if(w/LBKG<3)return 30*(e/w-1); return 1+Ma
 function perf(x){ return x?(x.w>0?E1(x.w,x.r):x.r):null; }
 function fl(x,i){ return i>0?Math.round(Math.floor(x/i+1e-9)*i*100)/100:x; }
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+// heaviest weight on your step that the strength estimate says still gives rr reps (after a fatigue drop)
+function solveW(P,rr,drop,i){let lo=0,hi=P;for(let k=0;k<50;k++){const m=(lo+hi)/2;if(RA(m,P)*(1-drop)>=rr)lo=m;else hi=m}const w=fl(lo,i);return w>0?w:i}
 function incOf(ex){ const v=S.settings.inc&&S.settings.inc[ex.id]; return (v===0||v>0)?v:ex.inc; }
 function getSet(id,k,s){ const w=S.ex[id]&&S.ex[id].weeks&&S.ex[id].weeks[k]; const x=w&&w[s]; return (x&&typeof x.r==="number")?x:null; }
 function weeksLogged(id,s){ const ws=S.ex[id]&&S.ex[id].weeks; if(!ws)return []; return Object.keys(ws).map(Number).filter(k=>getSet(id,k,s)).sort((a,b)=>a-b); }
@@ -306,7 +316,7 @@ function lw(id,s){ const a=weeksLogged(id,s); return a.length?a[a.length-1]:0; }
 function kb(id,s,saw){ const a=weeksLogged(id,s).filter(k=>k<saw); return a.length?a[a.length-1]:0; }
 function fw(id,s){ const a=weeksLogged(id,s); return a.length?a[0]:0; }
 const fmtW=w=>(Math.round(w*100)/100).toString();
-function fmtT(w,r,min,max){ if(r==null)return "Pick a weight for "+min+"–"+max; if(!(w>0))return r+" reps"; return fmtW(w)+" lb × "+r; }
+function fmtT(w,r,min,max){ if(r==null)return min+"–"+max+" reps"; if(!(w>0))return r+" reps"; return fmtW(w)+" lb × "+r; }
 
 function dayState(day){
   let saw=0; const rows=[];
@@ -320,7 +330,10 @@ function dayState(day){
   const dw=saw===0?1:(pend.length?saw:saw+1);
   rows.forEach((row,i)=>Object.assign(row,target(row,i>0&&rows[i-1].ex===row.ex?rows[i-1]:null,saw)));
   rows.forEach(r=>{r.logged=getSet(r.ex.id,dw,r.s); r.last=r.L?getSet(r.ex.id,r.L,r.s):null;});
-  const next=rows.find(r=>r.status==="P"&&!r.logged)||null;
+  // order sets the way you actually do them: supersets alternate A1 s1, A2 s1, A1 s2...
+  const gi=r=>{const ss=r.ex.ss;if(ss&&ss[1]==="2"){const p=day.ex.findIndex(e=>e.ss===ss[0]+"1");if(p>=0)return [p,1]}return [day.ex.indexOf(r.ex),0]};
+  const order=rows.slice().sort((a,b)=>{const A=gi(a),B=gi(b);return A[0]-B[0]||a.s-b.s||A[1]-B[1]});
+  const next=order.find(r=>r.status==="P"&&!r.logged)||(saw===0?order.find(r=>!r.logged):null)||null;
   const done=rows.filter(r=>r.logged).length;
   return {saw,dw,rows,next,done,total:rows.length,complete:saw>0&&pend.length===0};
 }
@@ -336,51 +349,55 @@ function target(row,prev,saw){
     const KDN=bwt?0:(ra(Math.max(W0-i,0))>=C+1?1:ra(Math.max(W0-2*i,0))>=C+1?2:ra(Math.max(W0-3*i,0))>=C+1?3:4);
     const RJ=bwt?null:Math.floor(ra(W0+i));
     if(stall){BW=bwt?W0:fl(W0*0.9,i);BR=bwt?R0:clamp(Math.floor(ra(BW))-2,C,D);
-      BWHY=bwt?"No progress 3 sessions running: slow the lowering to 3 s or add a pause":"No progress 3 sessions running: reset 10% lighter and build back up";}
+      BWHY=bwt?"Stalled 3 sessions: slow the lowering to 3 s":"Stalled 3 sessions: reset 10% lighter";}
     else if(R0>=D){BW=bwt?W0:W0+KUP*i;BR=(bwt||KUP===0)?R0+1:clamp(Math.floor(ra(BW)),C,D);
-      BWHY=bwt?"Top of the range: add reps, or hold a weight":KUP===0?("Top of range, but +"+fmtW(i)+" lb would drop you to ~"+RJ+" reps: keep adding reps first (rep progression builds muscle as well as load)"):("Hit "+R0+" reps (top of range): +"+fmtW(KUP*i)+" lb"+(KUP>1?" ("+KUP+" increments, you have the reps for it)":""));}
-    else if(R0>=C){BW=W0;BR=fast?Math.min(D,R0+2):R0+1;BWHY=fast?"Progressing fast: same weight, +2 reps":"In range: same weight, +1 rep";}
-    else if(R0>=C-2){BW=W0;BR=C;BWHY="Just short of "+C+": same weight, reach "+C;}
-    else{BW=bwt?W0:Math.max(0,W0-KDN*i);BR=bwt?C:clamp(Math.floor(ra(BW)),C,D);BWHY="Too heavy ("+R0+" reps): lighter so you land in "+C+"–"+D;}
-    if(Pf1!=null&&Pf0<Pf1*0.93)BWHY+=". Big drop vs last time: check sleep, food, stress";
+      BWHY=bwt?"Top of range: add reps or hold a weight":KUP===0?("Top of range, but +"+fmtW(i)+" lb would drop you to ~"+RJ+": keep adding reps"):("Hit "+R0+": +"+fmtW(KUP*i)+" lb");}
+    else if(R0>=C){BW=W0;BR=fast?Math.min(D,R0+2):R0+1;BWHY=fast?"Moving fast: +2 reps":"Same weight, +1 rep";}
+    else if(R0>=C-1||bwt){BW=W0;BR=C;BWHY="1 short last time: same weight, hit "+C;if(bwt&&R0<C-1)BWHY="Short of "+C+": build up to it";}
+    else{BW=Math.min(Math.max(W0-i,i),solveW(Pf0,Math.min(D,C+1),0,i));BR=clamp(Math.round(ra(BW)),C,D);BWHY="Only "+R0+" last time: lighter to land in "+C+"–"+D;}
+    if(Pf1!=null&&Pf0<Pf1*0.93)BWHY+=" (big drop: check sleep and food)";
   }
   let mode="base",PW=null,PR=null,PP=null,KFX=0;
   if(prev&&status==="P"&&saw){
     const px=getSet(ex.id,saw,s-1);
     if(px){PW=px.w>0?px.w:0;PR=px.r;PP=perf(px);
-      if(i>0&&PW>0&&(PR>D||PR<C-2))mode="fix";
-      else if(L===0)mode="copy";
+      if(L===0)mode="copy";
       else if(prev.Q==null)mode="base";
       else mode=prev.Q<0.95?"off":prev.Q>=1.05?"strong":"base";
-      if(mode==="fix"){const pr=w=>RA(w,PP)*(1-drop);
-        KFX=PR>D?(pr(PW+3*i)>=C+1?3:pr(PW+2*i)>=C+1?2:1):(pr(Math.max(PW-i,0))>=C+1?-1:pr(Math.max(PW-2*i,0))>=C+1?-2:pr(Math.max(PW-3*i,0))>=C+1?-3:-4);}
     }
   }
   const BUMP=L>0&&i>0&&W0>0&&BW===W0;
   let TW,RAWTR;
   if(status==="D"){TW=BW;RAWTR=BR}
   else if(status==="N"){TW=null;RAWTR=null}
-  else if(mode==="fix"){TW=Math.max(0,PW+KFX*i);RAWTR=D}
   else if(mode==="copy"){TW=PW;RAWTR=PR}
   else if(L===0){TW=null;RAWTR=null}
   else if(mode==="off"){TW=W0;RAWTR=R0}
   else if(mode==="strong"){TW=BUMP?BW+i:BW;RAWTR=BUMP?D:Math.min(D,BR+1)}
   else{TW=BW;RAWTR=BR}
+  // Live correction: if the set you just did says the planned weight would land you outside the rep range, re-size it now
+  let FX0=null;
+  if(status==="P"&&PP!=null&&i>0&&PW>0){
+    const tw0=TW>0?TW:PW, p=RA(tw0,PP)*(1-drop);
+    if(p<C-0.5||p>D+0.5){const nw=solveW(PP,Math.min(D,C+1),drop,i);
+      if(nw!==tw0){FX0=tw0;TW=nw;RAWTR=clamp(Math.round(RA(nw,PP)*(1-drop)),C,D);mode="fix";}}
+  }
   let PRED=null;
   if(status==="P"&&PP!=null){PRED=!(TW>0)?Math.round(PR*(1-drop)):Math.max(1,Math.round(RA(TW,PP)*(1-drop)));}
   const capped=PRED!=null&&RAWTR!=null&&PRED<RAWTR; const TR=capped?PRED:RAWTR;
   let why,tone="";
   if(status==="D"){why=BWHY}
-  else if(status==="N"){why="First week: find a weight you can lift "+C+"–"+D+" reps, 1–2 short of failure"}
-  else if(mode==="fix"){why=PR>D?("Set before hit "+PR+" reps (over "+D+"): heavier now, sized to land you in range after fatigue"):("Set before was only "+PR+" reps: lighter now, sized to land you in range after fatigue");tone=PR>D?"good":"bad"}
-  else if(capped){why="Expect ~"+PRED+" reps: after "+PR+" last set, reps typically fall ~"+Math.round(drop*100)+"% with this rest. Beat it if you can"}
-  else if(mode==="copy"){why="Match the set before ("+fmtT(PW,PR)+")"}
-  else if(L===0){why="First time: find a weight for "+C+"–"+D+" reps"}
-  else if(mode==="off"){why="Last set came in 5%+ under last week: repeat last week ("+fmtT(W0,R0)+"), no progression today";tone="bad"}
-  else if(mode==="strong"){why=BUMP?"Last set beat last week by 5%+: go up one increment right now":"Last set beat last week by 5%+: push one extra rep";tone="good"}
+  else if(status==="N"){why=""}
+  else if(mode==="fix"){const up=TW>FX0;
+    why=up?("Too light ("+PR+" reps): go up to "+fmtW(TW)+" lb"):(PR<C?("Only "+PR+" reps: drop to "+fmtW(TW)+" lb to stay in "+C+"–"+D):("At "+fmtW(FX0)+" lb you'd fall under "+C+": drop to "+fmtW(TW)+" lb"));tone=up?"good":"bad"}
+  else if(capped){why="Expect ~"+PRED+" after fatigue. Beat it if you can"}
+  else if(mode==="copy"){why="Match the last set"}
+  else if(L===0){why=""}
+  else if(mode==="off"){why="Weaker than last week: repeat last week";tone="bad"}
+  else if(mode==="strong"){why=BUMP?"Stronger than last week: +"+fmtW(i)+" lb now":"Stronger than last week: +1 rep";tone="good"}
   else{why=BWHY}
-  if(!tone&&/jump|increments|fast|\+\d+(\.\d+)? lb/.test(why))tone="good";
-  if(!tone&&/Too heavy|reset|Big drop/.test(why))tone="bad";
+  if(!tone&&/fast|\+\d+(\.\d+)? lb/.test(why))tone="good";
+  if(!tone&&/Only|reset|big drop/.test(why))tone="bad";
   let trend=null; const F=fw(ex.id,s);
   if(L>0&&F&&F!==L){const ch=Pf0/perf(getSet(ex.id,F,s))-1; trend=ch<-0.05?{t:"Down "+Math.round(-ch*100)+"%",c:"bad"}:ch>0.005?{t:"Up "+Math.round(ch*100)+"%",c:"good"}:{t:"Holding",c:""};}
   return {tw:TW,tr:TR,why,tone,mode,trend};
@@ -440,7 +457,8 @@ function render(){
 }
 function storeNote(){
   if(MODE==="local"){const has=Object.keys(S.ex).length>0, lb=lastBackup();
-    if(has&&Date.now()-lb>7*864e5)return `<div class="notice">Your log lives only on this phone. ${lb?"It's been over a week since your last backup.":"You haven't backed it up yet."} <a href="#plan">Back up now</a></div>`;
+    const first=Math.min(...Object.values(S.ex).flatMap(e=>Object.values(e.weeks||{}).flat()).filter(x=>x&&x.t).map(x=>x.t),Date.now());
+    if(has&&Date.now()-first>7*864e5&&Date.now()-lb>7*864e5)return `<div class="notice">Your log lives only on this phone. ${lb?"It's been over a week since your last backup.":"You haven't backed it up yet."} <a href="#plan">Back up now</a></div>`;
     return "";}
   if(STALE)return `<div class="notice">Your saved log can't be reached right now, so what you see may be out of date.</div>`;
   return "";
@@ -462,21 +480,22 @@ function renderHome(){
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></a>`}).join("");
   app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Train</h1></div></div>
    <div class="stack">${storeNote()}${hero}
-   <div class="label">All sessions · Thu and Sun are rest days</div><div class="daylist">${list}</div></div>`;
+   <div class="label">Sessions · Thu and Sun off</div><div class="daylist">${list}</div></div>`;
 }
 function renderDay(day){
   const st=dayState(day); const nx=st.next;
   let banner;
-  if(st.saw===0){const f=st.rows[0];banner=`<div class="next"><div class="label">Start here</div><div class="what">${esc(f.ex.name)} · set 1</div><div class="why">Pick a weight you can lift ${f.ex.min}–${f.ex.max} reps, stopping 1–2 reps short of failure. The app sets every target after that.</div></div>`}
-  else if(nx){banner=`<div class="next"><div class="label">Next · Week ${st.dw}</div><div class="what">${nx.ex.ss?`<span class="ss">${nx.ex.ss}</span> `:""}${esc(nx.ex.name)} · set ${nx.s+1}</div><div class="tgt">${esc(fmtT(nx.tw,nx.tr,nx.ex.min,nx.ex.max))}</div><div class="why">${esc(nx.why)}</div></div>`}
-  else{banner=`<div class="next" style="background:var(--good-bg);border-color:transparent"><div class="label">Week ${st.saw} complete</div><div class="what">Next session is week ${st.saw+1}. Targets below are already set.</div></div>`}
+  if(st.saw===0)banner=`<p class="note">First session: pick weights you can lift for the rep range, 1–2 reps short of failure. The app sets every target after that.</p>`;
+  else if(!nx)banner=`<div class="notice good">Week ${st.saw} done. Next session's targets are set below.</div>`;
+  else banner="";
   const byEx=[];st.rows.forEach(r=>{let g=byEx.find(x=>x.ex===r.ex);if(!g){g={ex:r.ex,rows:[]};byEx.push(g)}g.rows.push(r)});
   const cards=byEx.map(g=>exCard(g,st)).join("");
   app.innerHTML=`<div class="top"><a class="iconbtn" href="#train" aria-label="Back to sessions"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></a>
      <div class="grow"><div class="sub">Day ${day.num} · ${esc(day.dow)}</div><h1>${esc(day.name)}</h1></div><span class="chip accent">Week ${st.dw}</span></div>
    <div class="stack">${storeNote()}${banner}${cards}
-   <p class="note">Superset pairs (A1 + A2, B1 + B2, C1 + C2): do the 1, go straight to the 2, rest about 90 s, repeat. LP = 3–6 half reps in the stretch after failure.</p></div>`;
+   <p class="note">A1 + A2 etc. are supersets: do 1, go straight to 2, rest ~90 s. LP = 3–6 half reps in the stretch after failure.</p></div>`;
   bindDay(day,st);
+  if(UI.scrollNext){UI.scrollNext=false;const el=app.querySelector(".set.isnext");if(el)setTimeout(()=>el.scrollIntoView({block:"center",behavior:"smooth"}),50);}
 }
 function exCard(g,st){
   const ex=g.ex; const i=incOf(ex); const r0=g.rows[0];
@@ -491,22 +510,18 @@ function exCard(g,st){
      <div class="row-actions"><input id="inc-${ex.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${i}" style="border:1px solid var(--line);border-radius:10px;padding:8px;width:110px;background:var(--surface)"><button class="btn small" data-act="incsave" data-ex="${ex.id}">Save</button><button class="btn ghost small" data-act="inccancel">Cancel</button></div>
      <span class="note">Use your gym's real step: dumbbells usually 5 lb each, cable stacks 5–10 lb, plate machines 10–20 lb. 0 = bodyweight.</span></div></div>`:"";
   return `<section class="ex" id="ex-${ex.id}"><div class="ex-h">
-     <div class="nm">${ex.ss?`<span class="ss">${ex.ss}</span>`:""}<span>${esc(ex.name)}</span></div>
-     <div class="ex-meta"><span class="chip">${ex.min}–${ex.max} reps</span><span class="chip">${esc(ex.effort)}</span>
-       <button class="chip" data-act="inc" data-ex="${ex.id}" aria-label="Change weight jump">${i>0?"+"+fmtW(i)+" lb steps":"Bodyweight"}</button>
-       ${trend?`<span class="chip ${trend.c}">${esc(trend.t)}${downTwice?" · do 1 fewer set":""}</span>`:""}</div>
-     ${ex.note?`<div class="note">${esc(ex.note)}</div>`:""}</div>
-     ${incEd}<div class="sets">${rows}</div>
-     <div style="padding:8px 14px 12px;border-top:1px solid var(--line)"><button class="linkbtn" data-act="hist" data-ex="${ex.id}">${histOpen?"Hide history":"Show history"}</button></div>${hist}</section>`;
+     <div class="nm">${ex.ss?`<span class="ss">${ex.ss}</span>`:""}<span class="grow">${esc(ex.name)}</span><button class="linkbtn" data-act="hist" data-ex="${ex.id}">${histOpen?"Hide":"History"}</button></div>
+     <div class="meta">${ex.min}–${ex.max} reps · ${esc(ex.effort)} · <button class="linkbtn plain" data-act="inc" data-ex="${ex.id}" aria-label="Change weight step">${i>0?"+"+fmtW(i)+" lb steps":"bodyweight"}</button>${ex.note?` · ${esc(ex.note)}`:""}${trend&&trend.c==="bad"?` · <b class="bad">${esc(trend.t)}${downTwice?", do 1 fewer set":""}</b>`:""}</div></div>
+     ${incEd}${hist}<div class="sets">${rows}</div></section>`;
 }
 function setRow(r,st){
   const key=r.ex.id+":"+r.s; const isNext=st.next===r; const editing=UI.editing===key||(UI.editing==null&&isNext);
   const lastTxt=r.last?`Last: ${esc(fmtT(r.last.w,r.last.r))}`:"";
   if(r.logged&&!editing){
-    return `<button class="set done" data-act="edit" data-key="${key}"><span class="sn">${r.s+1}</span><span><span class="tg">✓ ${esc(fmtT(r.logged.w,r.logged.r))}</span><span class="why">Logged · tap to change</span></span><span class="last">${r.status==="D"&&r.L===st.dw?"":lastTxt}</span></button>`;
+    return `<button class="set done" data-act="edit" data-key="${key}" aria-label="Change set ${r.s+1}"><span class="sn">${r.s+1}</span><span><span class="tg">✓ ${esc(fmtT(r.logged.w,r.logged.r))}</span></span><span class="last">${r.status==="D"&&r.L===st.dw?"":lastTxt}</span></button>`;
   }
   const t=fmtT(r.tw,r.tr,r.ex.min,r.ex.max);
-  const head=`<button class="set ${isNext?"isnext":""}" data-act="edit" data-key="${key}" aria-expanded="${editing}"><span class="sn">${r.s+1}</span><span style="min-width:0"><span class="tg">${esc(t)}</span><span class="why ${r.tone}">${esc(r.why)}</span></span><span class="last">${lastTxt}</span></button>`;
+  const head=`<button class="set ${isNext?"isnext":""}" data-act="edit" data-key="${key}" aria-expanded="${editing}"><span class="sn">${r.s+1}</span><span style="min-width:0"><span class="tg ${r.tw==null&&r.tr==null?"dim":""}">${esc(t)}</span>${(isNext||editing)&&r.why?`<span class="why ${r.tone}">${esc(r.why)}</span>`:""}</span><span class="last">${lastTxt}</span></button>`;
   if(!editing)return head;
   const w0=r.logged?r.logged.w:(r.tw!=null?r.tw:(r.last?r.last.w:""));
   const reps0=r.logged?r.logged.r:(r.tr!=null?r.tr:"");
@@ -517,7 +532,6 @@ function setRow(r,st){
       <label class="field"><span class="label">Reps</span><span class="stepper"><button type="button" data-step="r" data-d="-1" aria-label="One fewer rep">−</button><input id="r-${key}" name="r" type="number" inputmode="numeric" min="0" step="1" value="${reps0}" placeholder="0"><button type="button" data-step="r" data-d="1" aria-label="One more rep">+</button></span></label>
     </div>
     <div class="row-actions"><button class="btn" type="submit">${r.logged?"Save change":"Log set "+(r.s+1)}</button>${r.logged?`<button class="btn danger" type="button" data-act="remove">Remove</button>`:""}${UI.editing?`<button class="btn ghost" type="button" data-act="close">Close</button>`:""}</div>
-    ${i>0?`<span class="note">− / + moves weight by your ${fmtW(i)} lb step.</span>`:""}
   </form>`;
 }
 function bindDay(day,st){
@@ -544,7 +558,7 @@ function bindDay(day,st){
     const k=st.dw; S.ex[id]=S.ex[id]||{weeks:{}}; const wk=S.ex[id].weeks[k]=(S.ex[id].weeks[k]||[]).slice();
     while(wk.length<ex.sets)wk.push(null);
     const wasLogged=!!wk[+s]; wk[+s]={w:isNaN(w)?0:w,r,t:Date.now()}; S.ex[id].weeks[k]=wk;
-    UI.editing=null; save("ex-"+id); render();
+    UI.editing=null; save("ex-"+id); UI.scrollNext=!wasLogged; render();
     if(!wasLogged)startRest(ex,day);
   }));
 }
@@ -556,7 +570,7 @@ function startRest(ex,day){
   if(!nx){head=st.complete?"Session complete. Nice work.":"All sets logged."; secs=0}
   else if(nx.ex!==ex&&ex.ss&&ex.ss[1]==="1"&&nx.ex.ss===ex.ss[0]+"2"){head="Superset: go straight to "+nx.ex.ss;secs=15}
   else head="Next: "+nx.ex.name+", set "+(nx.s+1);
-  const tgt=nx?fmtT(nx.tw,nx.tr,nx.ex.min,nx.ex.max):"";
+  const tgt=nx?fmtT(nx.tw,nx.tr,nx.ex.min,nx.ex.max)+(nx.mode==="fix"?" · "+(nx.tw<(getSet(nx.ex.id,st.dw,nx.s-1)||{}).w?"lighter":"heavier"):""):"";
   clearInterval(restT); restEnd=Date.now()+secs*1000;
   const tick=()=>{const left=Math.max(0,Math.round((restEnd-Date.now())/1000));
     restEl.innerHTML=`<div class="clock">${secs?Math.floor(left/60)+":"+String(left%60).padStart(2,"0"):"✓"}</div><div class="info"><b>${esc(head)}</b>${esc(tgt)}</div><button type="button" id="restx">${left>0?"Skip":"Close"}</button>`;
@@ -569,13 +583,6 @@ function renderNutrition(){
   app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Nutrition</h1></div></div>
   <div class="stack">${storeNote()}
    ${st.example?`<div class="notice">These are example numbers (190 lb, 15% body fat). Replace them with yours.</div>`:""}
-   <form class="card form" id="nform">
-    <label>Bodyweight (lb)<input id="n-bw" type="number" inputmode="decimal" step="0.1" value="${esc(st.bw)}"><span class="hint">Morning average</span></label>
-    <label>Body fat %<input id="n-bf" type="number" inputmode="decimal" step="0.5" value="${esc(st.bf)}"><span class="hint">A mirror estimate is fine</span></label>
-    <label>Maintenance kcal<input id="n-maint" type="number" inputmode="numeric" value="${st.maint>0?esc(st.maint):""}" placeholder="${n.estMaint?n.maint+" (est.)":""}"><span class="hint">Optional: calories that held your weight steady</span></label>
-    <label>Loss per week %<input id="n-rate" type="number" inputmode="decimal" step="0.05" value="${st.rate>0?esc(st.rate):""}" placeholder="${(n.rate*100).toFixed(2)} (auto)"><span class="hint">Optional: 0.2–1.5</span></label>
-    <label>Daily steps<input id="n-steps" type="number" inputmode="numeric" step="500" value="${esc(st.steps)}"></label>
-   </form>
    <div class="kpis">
     <div class="kpi key"><span class="label">Daily calories</span><b>${n.kcal.toLocaleString()}</b><span class="note">to start; check-ins adjust it</span></div>
     <div class="kpi"><span class="label">Protein</span><b>${n.protein} g</b><span class="note">2.7 g/kg lean mass</span></div>
@@ -584,9 +591,16 @@ function renderNutrition(){
     <div class="kpi"><span class="label">Target loss</span><b>${n.lossLb} lb</b><span class="note">${(n.rate*100).toFixed(2)}% of bodyweight a week</span></div>
     <div class="kpi"><span class="label">Steps</span><b>${n.steps.toLocaleString()}</b><span class="note">every day</span></div>
    </div>
-   <div class="card small"><div class="label" style="margin-bottom:6px">How it's worked out</div>
+   <details class="card fold" ${st.example?"open":""}><summary>Your numbers</summary><form class="form" id="nform">
+    <label>Bodyweight (lb)<input id="n-bw" type="number" inputmode="decimal" step="0.1" value="${esc(st.bw)}"><span class="hint">Morning average</span></label>
+    <label>Body fat %<input id="n-bf" type="number" inputmode="decimal" step="0.5" value="${esc(st.bf)}"><span class="hint">A mirror estimate is fine</span></label>
+    <label>Maintenance kcal<input id="n-maint" type="number" inputmode="numeric" value="${st.maint>0?esc(st.maint):""}" placeholder="${n.estMaint?n.maint+" (est.)":""}"><span class="hint">Optional: calories that held your weight steady</span></label>
+    <label>Loss per week %<input id="n-rate" type="number" inputmode="decimal" step="0.05" value="${st.rate>0?esc(st.rate):""}" placeholder="${(n.rate*100).toFixed(2)} (auto)"><span class="hint">Optional: 0.2–1.5</span></label>
+    <label>Daily steps<input id="n-steps" type="number" inputmode="numeric" step="500" value="${esc(st.steps)}"></label>
+   </form></details>
+   <details class="card fold small"><summary>How it's worked out</summary>
     Lean mass ${Math.round(n.lbm)} lb → resting burn ${n.bmr.toLocaleString()} kcal (Katch-McArdle) → maintenance ${n.maint.toLocaleString()} kcal${n.estMaint?" (resting burn × 1.6)":" (yours)"} → deficit ${n.deficit} kcal/day. Calories never go below your resting burn; if progress stalls there, add steps instead.
-    Rate: 1% a week at 15%+ body fat, 0.75% at 10–15%, 0.5% when leaner, because faster cuts lose more muscle.</div>
+    Rate: 1% a week at 15%+ body fat, 0.75% at 10–15%, 0.5% when leaner, because faster cuts lose more muscle.</details>
   </div>`;
   let tmr=null;
   app.querySelectorAll("#nform input").forEach(inp=>inp.addEventListener("input",()=>{clearTimeout(tmr);tmr=setTimeout(()=>{
@@ -660,7 +674,7 @@ function renderPlan(){
 }
 let toastT=null;
 function toast(msg){let t=document.querySelector(".toast");if(!t){t=document.createElement("div");t.className="toast";t.setAttribute("role","status");document.body.appendChild(t)}t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},3200)}
-window.addEventListener("hashchange",()=>{UI.editing=null;UI.incEdit=null;render();window.scrollTo(0,0)});
+window.addEventListener("hashchange",()=>{UI.editing=null;UI.incEdit=null;window.scrollTo(0,0);UI.scrollNext=/^day/.test(route());render()});
 // keep the screen awake during a workout when allowed
 let wl=null;async function wake(){try{if(navigator.wakeLock&&!wl){wl=await navigator.wakeLock.request("screen");wl.addEventListener("release",()=>{wl=null})}}catch(e){}}
 document.addEventListener("click",wake,{once:true});document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&wl===null&&route().startsWith("day"))wake()});
