@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Shred Coach</title>
+<meta name="description" content="Offline hypertrophy logbook with live set targets.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Shred Coach">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#ECEFEA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1412" media="(prefers-color-scheme: dark)">
+<style>
+/* Layout: one-column phone logbook; sticky top bar, bottom tab bar, cards per exercise with set rows */
+:root{
+  --bg:#ECEFEA; --surface:#FFFFFF; --surface-2:#F5F7F3; --ink:#131A16; --muted:#5B655F; --line:#D7DCD5;
+  --accent:#1D4ED8; --accent-ink:#FFFFFF; --accent-soft:#E3EAFD;
+  --good:#1E7A46; --good-bg:#DCF1E3; --warn:#8F5600; --warn-bg:#FBEBCB; --bad:#B42318; --bad-bg:#FADFDB;
+  --next:#FFF1C2; --next-line:#E8C860;
+  --f-display:"Avenir Next Condensed","Roboto Condensed","Arial Narrow",sans-serif-condensed,Arial,sans-serif;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --r:12px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1210; --surface:#171C19; --surface-2:#1D2420; --ink:#E8EDE9; --muted:#9AA49E; --line:#2A332E;
+  --accent:#86A8FF; --accent-ink:#0A1024; --accent-soft:#1B2645;
+  --good:#5ED291; --good-bg:#14301F; --warn:#F1B755; --warn-bg:#33270E; --bad:#FF8B7B; --bad-bg:#3A1A16;
+  --next:#33300F; --next-line:#7A6A1E; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0E1210; --surface:#171C19; --surface-2:#1D2420; --ink:#E8EDE9; --muted:#9AA49E; --line:#2A332E;
+  --accent:#86A8FF; --accent-ink:#0A1024; --accent-soft:#1B2645;
+  --good:#5ED291; --good-bg:#14301F; --warn:#F1B755; --warn-bg:#33270E; --bad:#FF8B7B; --bad-bg:#3A1A16;
+  --next:#33300F; --next-line:#7A6A1E; color-scheme:dark }
+*{box-sizing:border-box}
+html,body{margin:0}
+html,body{background:var(--bg)}
+body{color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 140px}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:10px 8px;display:flex;align-items:center;gap:10px}
+.top h1{font-family:var(--f-display);font-weight:700;font-size:28px;letter-spacing:.01em;margin:0;line-height:1;text-wrap:balance}
+.top .sub{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.top .grow{flex:1;min-width:0}
+.iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;width:40px;height:40px;display:grid;place-items:center;flex:none}
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;background:var(--surface-2);border:1px solid var(--line);white-space:nowrap}
+.chip.good{background:var(--good-bg);color:var(--good);border-color:transparent}
+.chip.bad{background:var(--bad-bg);color:var(--bad);border-color:transparent}
+.chip.accent{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.stack{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.num{font-family:var(--f-display);font-variant-numeric:tabular-nums}
+.note{font-size:12px;color:var(--muted)}
+.notice{font-size:13px;border-radius:10px;padding:8px 12px;background:var(--warn-bg);color:var(--warn)}
+/* NEXT banner */
+.next{background:var(--next);border:1px solid var(--next-line);border-radius:var(--r);padding:14px;display:grid;gap:6px}
+.next .what{font-weight:700;font-size:15px}
+.next .tgt{font-family:var(--f-display);font-weight:700;font-size:40px;line-height:1;font-variant-numeric:tabular-nums}
+.next .why{font-size:13px}
+.btn{border:0;border-radius:10px;padding:11px 16px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn.small{padding:7px 12px;font-size:13px}
+.btn.danger{background:transparent;color:var(--bad);border:1px solid var(--line)}
+.row-actions{display:flex;gap:8px;flex-wrap:wrap}
+/* Home */
+.daylist{display:grid;gap:8px}
+.day{display:grid;grid-template-columns:52px 1fr auto;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;text-align:left;width:100%}
+.day .dn{font-family:var(--f-display);font-weight:700;font-size:26px;line-height:1;text-align:center;border-right:1px solid var(--line);padding-right:10px}
+.day .dn small{display:block;font-size:12px;font-family:var(--f-body);color:var(--muted);font-weight:600;letter-spacing:.06em}
+.day .t{font-weight:700}
+.bar{height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin-top:6px;border:1px solid var(--line)}
+.bar i{display:block;height:100%;background:var(--accent)}
+.hero{display:grid;gap:10px}
+.hero h2{font-family:var(--f-display);font-size:34px;line-height:1;margin:0}
+/* Exercise cards */
+.ex{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.ex-h{padding:12px 14px 8px;display:grid;gap:4px}
+.ex-h .nm{font-weight:700;font-size:16px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.ss{font-family:var(--f-display);font-weight:700;font-size:15px;background:var(--ink);color:var(--bg);border-radius:6px;padding:0 6px}
+.ex-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.sets{display:grid}
+.set{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;padding:10px 14px;border-top:1px solid var(--line);text-align:left;background:transparent;border-left:0;border-right:0;border-bottom:0;width:100%}
+.set .sn{font-family:var(--f-display);font-weight:700;font-size:20px;color:var(--muted);text-align:center}
+.set .tg{display:block;font-family:var(--f-display);font-weight:600;font-size:22px;font-variant-numeric:tabular-nums;line-height:1.1}
+.set .why{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+[hidden]{display:none!important}
+.set .last{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
+.set.done .tg{color:var(--good)}
+.set.isnext{background:var(--next)}
+.set.isnext .sn{color:var(--ink)}
+.why.good{color:var(--good)} .why.bad{color:var(--bad)}
+.logger{padding:12px 14px 14px;border-top:1px solid var(--line);background:var(--next);display:grid;gap:10px}
+.logger.edit{background:var(--surface-2)}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:grid;gap:4px}
+.stepper{display:grid;grid-template-columns:44px 1fr 44px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.stepper button{border:0;background:var(--surface-2);font-size:20px;font-weight:700}
+.stepper input{border:0;text-align:center;font-family:var(--f-display);font-size:26px;font-weight:700;width:100%;min-width:0;background:transparent;padding:6px 0;font-variant-numeric:tabular-nums}
+.hist{padding:8px 14px 12px;border-top:1px solid var(--line);overflow-x:auto}
+.hist table{border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;width:100%}
+.hist th,.hist td{padding:4px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+.linkbtn{background:none;border:0;color:var(--accent);font-weight:600;font-size:13px;padding:0}
+/* forms + tables */
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.form label{display:grid;gap:4px;font-size:13px;font-weight:600}
+.form input{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--surface);width:100%;min-width:0}
+.form .hint{font-weight:400;color:var(--muted);font-size:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.kpi{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:10px}
+.kpi b{display:block;font-family:var(--f-display);font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}
+.kpi.key{background:var(--accent-soft);border-color:transparent}
+.kpi.key b{color:var(--accent)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.tbl table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+.tbl th,.tbl td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.tbl th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.tbl td.wrap{white-space:normal;min-width:200px}
+.status{font-weight:600;border-radius:8px;padding:2px 8px;display:inline-block}
+.status.good{background:var(--good-bg);color:var(--good)}
+.status.warn{background:var(--warn-bg);color:var(--warn)}
+.status.bad{background:var(--bad-bg);color:var(--bad)}
+.prose h3{font-family:var(--f-display);font-size:22px;margin:4px 0 6px}
+.prose dl{display:grid;gap:10px;margin:0}
+.prose dt{font-weight:700}
+.prose dd{margin:2px 0 0;color:var(--ink)}
+.prose dd .src{display:block;font-size:12px;color:var(--muted)}
+.prose ul{padding-left:18px;margin:6px 0}
+.prose a{color:var(--accent)}
+/* rest timer + tabs */
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+.rest{display:flex;align-items:center;gap:12px;padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));background:var(--ink);color:var(--bg)}
+.rest .clock{font-family:var(--f-display);font-weight:700;font-size:30px;font-variant-numeric:tabular-nums;line-height:1}
+.rest .info{flex:1;min-width:0;font-size:13px;line-height:1.3}
+.rest .info b{display:block}
+.rest button{background:transparent;color:var(--bg);border:1px solid currentColor;border-radius:8px;padding:6px 10px;font-weight:600;font-size:13px}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);max-width:640px;margin:0 auto;padding-left:max(0px,env(safe-area-inset-left,0px));padding-right:max(0px,env(safe-area-inset-right,0px))}
+.tabs a{display:grid;place-items:center;gap:2px;padding:8px 0 10px;text-decoration:none;color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.04em}
+.tabs a svg{width:22px;height:22px}
+.tabs a.on{color:var(--accent)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:13px;z-index:20;max-width:calc(100% - 32px)}
+@media (prefers-reduced-motion:no-preference){.next,.logger{animation:pop .18s ease-out}@keyframes pop{from{transform:translateY(4px);opacity:.6}to{transform:none;opacity:1}}}
+</style>
+</head>
+<body>
+
+<div class="wrap" id="app"><div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Loading your log…</h1></div></div></div>
+<div class="dock" id="dock">
+  <div class="rest" id="rest" hidden></div>
+  <nav class="tabs" id="tabs">
+    <a href="#train" data-tab="train"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>Train</a>
+    <a href="#checkin" data-tab="checkin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19h16M6 15l4-4 3 3 5-6"/></svg>Check-in</a>
+    <a href="#nutrition" data-tab="nutrition"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l5 3"/></svg>Nutrition</a>
+    <a href="#plan" data-tab="plan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 4h9l3 3v13H6z M9 10h6M9 14h6M9 18h4"/></svg>Plan</a>
+  </nav>
+</div>
+
+<script>
+(function(){
+"use strict";
+/* ---------------- Program ---------------- */
+const C2="1-2 RIR, all sets (no failure)";
+// [id, superset, name, sets, repMin, repMax, increment lb, effort, note, legCompound]
+const RAW=[
+ ["d1","Chest & Back","Mon",[
+  ["d1-press","A1","Machine chest press (flat)",3,8,12,10,C2,"Flat = mid/lower chest"],
+  ["d1-pulldown","A2","Lat pulldown (any comfortable grip)",3,8,12,10,C2,"Grip width doesn't change lat growth: pick the comfiest"],
+  ["d1-incfly","B1","Incline cable fly (bench at 30° between cables)",3,8,12,5,"1 RIR, last set failure + LP","Upper chest; tension through the whole rep"],
+  ["d1-row","B2","Chest-supported machine row",3,8,12,10,C2,"Let shoulders reach forward at the stretch"],
+  ["d1-pecdeck","C1","Pec deck / machine fly",2,10,15,5,"Last set failure + LP","Start in a full stretch"],
+  ["d1-revpec","C2","Reverse pec deck, one arm, sitting sideways",3,12,20,5,"1 RIR, last set failure","Sideways = deeper stretch; no shrug"],
+  ["d1-pullover","","Machine or cable lat pullover",2,10,15,5,"Failure + LP","Lats only, no biceps"],
+  ["d1-shrug","","Cable or dumbbell shrug",2,10,15,10,"Last set failure","1 s hold at top"]]],
+ ["d2","Shoulders & Arms","Tue",[
+  ["d2-cuffed","","Behind-the-back cuffed cable lateral raise",4,10,15,5,"1 RIR, last set failure + LP","Side delts first while fresh; weight per arm"],
+  ["d2-shpress","","Machine shoulder press",2,8,12,10,C2,"Front + side delts"],
+  ["d2-machlat","","Machine lateral raise (standing type if available)",3,12,20,5,"Last set: drop set","Easy to drop-set"],
+  ["d2-inccurl","A1","Incline dumbbell curl (45-60°)",3,8,12,5,"1 RIR, last set failure","Weight per dumbbell"],
+  ["d2-ohext","A2","Overhead cable triceps extension (bar or rope)",4,8,12,5,"1 RIR, last set failure","Elbows by ears; full stretch"],
+  ["d2-preacher","B1","Preacher curl (machine or dumbbell)",3,8,12,5,"Last set failure + LP",""],
+  ["d2-crossext","B2","Cross-body cable triceps extension",3,10,15,5,"1 RIR, last set failure","Weight per arm"],
+  ["d2-hammer","","Hammer curl (rope or dumbbell)",2,10,15,5,"Last set failure",""]]],
+ ["d3","Legs","Wed",[
+  ["d3-seatcurl","","Seated leg curl",4,8,12,10,"1 RIR, last set failure","Lean forward for more stretch"],
+  ["d3-hack","","Hack squat or pendulum squat (or 45° leg press)",3,8,12,20,C2,"Deep as you can control; quads, glutes, adductors",1],
+  ["d3-legext","","Leg extension, seat reclined (~40° at hip)",4,10,15,10,"1 RIR; last set failure + LP","Reclining grows the rectus femoris more"],
+  ["d3-rdl","","Dumbbell Romanian deadlift",3,8,12,5,C2,"Weight per dumbbell; hinge until hamstrings are fully stretched",1],
+  ["d3-hipthrust","","Machine hip thrust (or dumbbell/plate hip thrust)",3,8,12,10,"1 RIR, last set failure","Pause 1 s at the top"],
+  ["d3-adduct","","Hip adduction machine",2,10,15,10,"Last set failure","Widest safe stretch"],
+  ["d3-calf","","Standing calf raise",4,8,12,10,"Failure + LP","2 s pause in the stretch"]]],
+ ["d4","Chest & Back","Fri",[
+  ["d4-incdb","A1","Incline dumbbell press (30°)",3,8,12,5,C2,"Upper chest; weight per dumbbell"],
+  ["d4-1armpd","A2","Half-kneeling one-arm cable pulldown",3,8,12,5,C2,"Each side; weight per arm"],
+  ["d4-lthfly","B1","Low-to-high cable fly",2,10,15,5,"Last set failure","Upper chest"],
+  ["d4-cablerow","B2","Seated cable row, wide grip",3,8,12,10,C2,"Lean forward slightly at the stretch"],
+  ["d4-pecdeck","C1","Pec deck, sitting slightly forward",2,10,15,5,"Last set failure + LP","Deep stretch at the start"],
+  ["d4-revcross","C2","Reverse cable crossover (rear delts)",3,12,20,5,"1 RIR, last set failure","Arms cross at the start; weight per side"],
+  ["d4-straightarm","","Kneeling straight-arm cable pulldown",2,10,15,5,"Failure + LP",""],
+  ["d4-crunch","","Cable crunch",3,10,15,10,"1 RIR",""],
+  ["d4-legraise","","Hanging leg raise",2,10,20,0,"Failure","Bodyweight: log 0 lb, or the load you hold"]]],
+ ["d5","Shoulders & Arms","Sat",[
+  ["d5-leanin","","Lean-in dumbbell lateral raise",4,10,15,5,"1 RIR, last set failure + LP","Hold a post, lean toward it"],
+  ["d5-yraise","","Cable Y-raise",3,12,20,5,"Last set failure",""],
+  ["d5-bayes","A1","Bayesian cable curl",3,8,12,5,"1 RIR, last set failure + LP","Core biceps lift"],
+  ["d5-ohdb","A2","Overhead dumbbell or cable extension",4,8,12,5,"1 RIR, last set failure","Long-head stretch"],
+  ["d5-dbpreacher","B1","Dumbbell preacher curl",3,10,15,5,"Last set failure + LP","Builds the brachialis too"],
+  ["d5-rope","B2","Rope triceps pushdown",3,10,15,5,"Last set: drop set",""],
+  ["d5-lpcalf","","Leg press calf raise (knees straight)",3,10,15,10,"Failure + LP","Straight knees train the gastrocnemius far more than seated"]]]
+];
+const DAYS=RAW.map(([id,name,dow,exs],i)=>({id,num:i+1,name,dow,ex:exs.map(a=>{
+  const [eid,ss,nm,sets,min,max,inc,effort,note,leg]=a;
+  const drop=(ss||leg)?0.10:0.15;
+  const rest=leg?150:(ss&&ss[1]==="1")?15:90;
+  return {id:eid,ss,name:nm,sets,min,max,inc,effort,note,drop,rest,day:id};
+})}));
+const EX={}; DAYS.forEach(d=>d.ex.forEach(e=>EX[e.id]=e));
+
+/* ---------------- State + storage ---------------- */
+const DEF_SETTINGS={bw:190,bf:15,maint:null,rate:null,steps:11000,example:true,inc:{}};
+let S={settings:JSON.parse(JSON.stringify(DEF_SETTINGS)),checkins:{weeks:[]},ex:{}};
+let MODE="loading", COL=null, LOADED=false, STALE=false;
+const LSKEY="shred-coach-v1";
+function lsRead(){try{const t=localStorage.getItem(LSKEY);return t?JSON.parse(t):null}catch(e){return null}}
+function lsWrite(){try{localStorage.setItem(LSKEY,JSON.stringify(S))}catch(e){}}
+const dirty={},running={};
+function bodyOf(id){ if(id==="settings")return S.settings; if(id==="checkins")return S.checkins; return S.ex[id.slice(3)]||{weeks:{}}; }
+function save(id){
+  if(MODE==="local"){lsWrite();return}
+  if(MODE!=="db"||!COL)return;
+  dirty[id]=true; if(running[id])return; running[id]=true;
+  (async()=>{try{while(dirty[id]){dirty[id]=false;
+      try{await COL.doc(id).set(JSON.parse(JSON.stringify(bodyOf(id))))}
+      catch(e){ if(e&&e.code==="unavailable"){await new Promise(r=>setTimeout(r,600+Math.random()*600));dirty[id]=true;continue}
+        toast(e&&e.code==="quota_exceeded"?"Storage is full, so that change wasn't saved.":"Couldn't save that change. Check your connection and try again.");}
+    }}finally{running[id]=false}})();
+}
+function applyDocs(docs){
+  const next={settings:JSON.parse(JSON.stringify(DEF_SETTINGS)),checkins:{weeks:[]},ex:{}};
+  docs.forEach(d=>{const b=d.data();if(!b)return;
+    if(d.id==="settings")next.settings=Object.assign({},DEF_SETTINGS,JSON.parse(JSON.stringify(b)),{inc:Object.assign({},b.inc||{})});
+    else if(d.id==="checkins")next.checkins={weeks:Array.isArray(b.weeks)?JSON.parse(JSON.stringify(b.weeks)):[]};
+    else if(d.id.startsWith("ex-"))next.ex[d.id.slice(3)]={weeks:JSON.parse(JSON.stringify(b.weeks||{}))};
+  });
+  S=next;
+}
+function initStore(){
+  MODE="local"; const l=lsRead();
+  if(l){try{S=normalizeImport(l)}catch(e){S=Object.assign(S,l)}}
+  LOADED=true; render();
+  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+}
+
+
+/* ---------------- Data export / import ---------------- */
+function exportText(){return JSON.stringify({app:"shred-coach",v:1,exported:new Date().toISOString(),data:S})}
+function normalizeImport(o){
+  if(o&&o.data&&typeof o.data==="object")o=o.data;
+  if(!o||typeof o!=="object"||typeof o.ex!=="object"||o.ex===null)throw new Error("bad");
+  const ex={}; Object.keys(o.ex).forEach(k=>{const w=o.ex[k]&&o.ex[k].weeks; if(w&&typeof w==="object")ex[k]={weeks:w}});
+  const st=Object.assign({},DEF_SETTINGS,o.settings||{}); st.inc=Object.assign({},(o.settings&&o.settings.inc)||{});
+  return {settings:st,checkins:{weeks:Array.isArray(o.checkins&&o.checkins.weeks)?o.checkins.weeks:[]},ex};
+}
+function showBox(t){const b=document.getElementById("dbox");if(!b)return;b.hidden=false;b.value=t;b.focus();b.select();try{b.setSelectionRange(0,t.length)}catch(e){}}
+function copyData(){
+  const t=exportText();
+  const fail=()=>{showBox(t);toast("Tap the text box below, Select All, then Copy.")};
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(()=>{toast("Copied. Paste it into the offline app's Restore box.");markBackup()},fail);return} }catch(e){}
+  fail();
+}
+function markBackup(){try{localStorage.setItem(LSKEY+"-backup",String(Date.now()))}catch(e){}}
+function lastBackup(){try{return +localStorage.getItem(LSKEY+"-backup")||0}catch(e){return 0}}
+
+function saveFile(){
+  const t=exportText(); const name="shred-coach-backup-"+new Date().toISOString().slice(0,10)+".json";
+  try{const f=new File([t],name,{type:"application/json"});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){navigator.share({files:[f],title:"Shred Coach backup"}).then(()=>{markBackup();toast("Backup saved.")},e=>{if(!e||e.name!=="AbortError")copyData()});return}}catch(e){}
+  try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([t],{type:"application/json"}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);markBackup();toast("Backup file downloaded.")}catch(e){copyData()}
+}
+function restoreText(t){
+  let next; try{next=normalizeImport(JSON.parse(String(t).trim()))}catch(e){toast("That doesn't look like a Shred Coach backup.");return}
+  const n=Object.keys(next.ex).length;
+  if(!confirm("Replace the log on this phone with the backup ("+n+" exercises with data)? This can't be undone."))return;
+  S=next; lsWrite(); toast("Restored."); render();
+}
+
+/* ---------------- Engine (same model as the spreadsheet) ---------------- */
+// Weight-dependent 1RM fitted to 303,494 real sets (arXiv 2603.17495); Epley under 3 kg
+const LBKG=2.2046;
+function E1(w,r){ if(w/LBKG<3)return w*(1+r/30); return w*(1+Math.pow(Math.max(r-1,0),0.85)/(-2.55+4.58*Math.log(w/LBKG))); }
+function RA(w,e){ if(!(w>0))return 0; if(w/LBKG<3)return 30*(e/w-1); return 1+Math.pow(Math.max(0,(e/w-1)*(-2.55+4.58*Math.log(w/LBKG))),1/0.85); }
+function perf(x){ return x?(x.w>0?E1(x.w,x.r):x.r):null; }
+function fl(x,i){ return i>0?Math.round(Math.floor(x/i+1e-9)*i*100)/100:x; }
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+function incOf(ex){ const v=S.settings.inc&&S.settings.inc[ex.id]; return (v===0||v>0)?v:ex.inc; }
+function getSet(id,k,s){ const w=S.ex[id]&&S.ex[id].weeks&&S.ex[id].weeks[k]; const x=w&&w[s]; return (x&&typeof x.r==="number")?x:null; }
+function weeksLogged(id,s){ const ws=S.ex[id]&&S.ex[id].weeks; if(!ws)return []; return Object.keys(ws).map(Number).filter(k=>getSet(id,k,s)).sort((a,b)=>a-b); }
+function lw(id,s){ const a=weeksLogged(id,s); return a.length?a[a.length-1]:0; }
+function kb(id,s,saw){ const a=weeksLogged(id,s).filter(k=>k<saw); return a.length?a[a.length-1]:0; }
+function fw(id,s){ const a=weeksLogged(id,s); return a.length?a[0]:0; }
+const fmtW=w=>(Math.round(w*100)/100).toString();
+function fmtT(w,r,min,max){ if(r==null)return "Pick a weight for "+min+"–"+max; if(!(w>0))return r+" reps"; return fmtW(w)+" lb × "+r; }
+
+function dayState(day){
+  let saw=0; const rows=[];
+  day.ex.forEach(ex=>{for(let s=0;s<ex.sets;s++){saw=Math.max(saw,lw(ex.id,s))}});
+  day.ex.forEach(ex=>{for(let s=0;s<ex.sets;s++){
+    const L=lw(ex.id,s); const status=L===0?(saw===0?"N":"P"):(L<saw?"P":"D");
+    const KB=kb(ex.id,s,saw); const PA=saw?perf(getSet(ex.id,saw,s)):null; const PB=KB?perf(getSet(ex.id,KB,s)):null;
+    rows.push({ex,s,L,status,Q:(PA!=null&&PB!=null)?PA/PB:null});
+  }});
+  const pend=rows.filter(r=>r.status==="P");
+  const dw=saw===0?1:(pend.length?saw:saw+1);
+  rows.forEach((row,i)=>Object.assign(row,target(row,i>0&&rows[i-1].ex===row.ex?rows[i-1]:null,saw)));
+  rows.forEach(r=>{r.logged=getSet(r.ex.id,dw,r.s); r.last=r.L?getSet(r.ex.id,r.L,r.s):null;});
+  const next=rows.find(r=>r.status==="P"&&!r.logged)||null;
+  const done=rows.filter(r=>r.logged).length;
+  return {saw,dw,rows,next,done,total:rows.length,complete:saw>0&&pend.length===0};
+}
+function target(row,prev,saw){
+  const {ex,s,L,status}=row, i=incOf(ex), C=ex.min, D=ex.max, drop=ex.drop;
+  let W0=null,R0=null,Pf0=null,Pf1=null,Pf2=null,BW=null,BR=null,BWHY="",bwt=true,KUP=0;
+  if(L>0){
+    const x=getSet(ex.id,L,s); W0=x.w>0?x.w:0; R0=x.r; Pf0=perf(x);
+    Pf1=L>1?perf(getSet(ex.id,L-1,s)):null; Pf2=L>2?perf(getSet(ex.id,L-2,s)):null;
+    const stall=Pf1!=null&&Pf2!=null&&Pf0<=Pf1*1.005&&Pf1<=Pf2*1.005;
+    bwt=(i===0||W0===0); const fast=Pf1!=null&&Pf0>=Pf1*1.05; const ra=w=>RA(w,Pf0);
+    KUP=bwt?0:(ra(W0+3*i)>=C+1?3:ra(W0+2*i)>=C+1?2:ra(W0+i)>=C?1:0);
+    const KDN=bwt?0:(ra(Math.max(W0-i,0))>=C+1?1:ra(Math.max(W0-2*i,0))>=C+1?2:ra(Math.max(W0-3*i,0))>=C+1?3:4);
+    const RJ=bwt?null:Math.floor(ra(W0+i));
+    if(stall){BW=bwt?W0:fl(W0*0.9,i);BR=bwt?R0:clamp(Math.floor(ra(BW))-2,C,D);
+      BWHY=bwt?"No progress 3 sessions running: slow the lowering to 3 s or add a pause":"No progress 3 sessions running: reset 10% lighter and build back up";}
+    else if(R0>=D){BW=bwt?W0:W0+KUP*i;BR=(bwt||KUP===0)?R0+1:clamp(Math.floor(ra(BW)),C,D);
+      BWHY=bwt?"Top of the range: add reps, or hold a weight":KUP===0?("Top of range, but +"+fmtW(i)+" lb would drop you to ~"+RJ+" reps: keep adding reps first (rep progression builds muscle as well as load)"):("Hit "+R0+" reps (top of range): +"+fmtW(KUP*i)+" lb"+(KUP>1?" ("+KUP+" increments, you have the reps for it)":""));}
+    else if(R0>=C){BW=W0;BR=fast?Math.min(D,R0+2):R0+1;BWHY=fast?"Progressing fast: same weight, +2 reps":"In range: same weight, +1 rep";}
+    else if(R0>=C-2){BW=W0;BR=C;BWHY="Just short of "+C+": same weight, reach "+C;}
+    else{BW=bwt?W0:Math.max(0,W0-KDN*i);BR=bwt?C:clamp(Math.floor(ra(BW)),C,D);BWHY="Too heavy ("+R0+" reps): lighter so you land in "+C+"–"+D;}
+    if(Pf1!=null&&Pf0<Pf1*0.93)BWHY+=". Big drop vs last time: check sleep, food, stress";
+  }
+  let mode="base",PW=null,PR=null,PP=null,KFX=0;
+  if(prev&&status==="P"&&saw){
+    const px=getSet(ex.id,saw,s-1);
+    if(px){PW=px.w>0?px.w:0;PR=px.r;PP=perf(px);
+      if(i>0&&PW>0&&(PR>D||PR<C-2))mode="fix";
+      else if(L===0)mode="copy";
+      else if(prev.Q==null)mode="base";
+      else mode=prev.Q<0.95?"off":prev.Q>=1.05?"strong":"base";
+      if(mode==="fix"){const pr=w=>RA(w,PP)*(1-drop);
+        KFX=PR>D?(pr(PW+3*i)>=C+1?3:pr(PW+2*i)>=C+1?2:1):(pr(Math.max(PW-i,0))>=C+1?-1:pr(Math.max(PW-2*i,0))>=C+1?-2:pr(Math.max(PW-3*i,0))>=C+1?-3:-4);}
+    }
+  }
+  const BUMP=L>0&&i>0&&W0>0&&BW===W0;
+  let TW,RAWTR;
+  if(status==="D"){TW=BW;RAWTR=BR}
+  else if(status==="N"){TW=null;RAWTR=null}
+  else if(mode==="fix"){TW=Math.max(0,PW+KFX*i);RAWTR=D}
+  else if(mode==="copy"){TW=PW;RAWTR=PR}
+  else if(L===0){TW=null;RAWTR=null}
+  else if(mode==="off"){TW=W0;RAWTR=R0}
+  else if(mode==="strong"){TW=BUMP?BW+i:BW;RAWTR=BUMP?D:Math.min(D,BR+1)}
+  else{TW=BW;RAWTR=BR}
+  let PRED=null;
+  if(status==="P"&&PP!=null){PRED=!(TW>0)?Math.round(PR*(1-drop)):Math.max(1,Math.round(RA(TW,PP)*(1-drop)));}
+  const capped=PRED!=null&&RAWTR!=null&&PRED<RAWTR; const TR=capped?PRED:RAWTR;
+  let why,tone="";
+  if(status==="D"){why=BWHY}
+  else if(status==="N"){why="First week: find a weight you can lift "+C+"–"+D+" reps, 1–2 short of failure"}
+  else if(mode==="fix"){why=PR>D?("Set before hit "+PR+" reps (over "+D+"): heavier now, sized to land you in range after fatigue"):("Set before was only "+PR+" reps: lighter now, sized to land you in range after fatigue");tone=PR>D?"good":"bad"}
+  else if(capped){why="Expect ~"+PRED+" reps: after "+PR+" last set, reps typically fall ~"+Math.round(drop*100)+"% with this rest. Beat it if you can"}
+  else if(mode==="copy"){why="Match the set before ("+fmtT(PW,PR)+")"}
+  else if(L===0){why="First time: find a weight for "+C+"–"+D+" reps"}
+  else if(mode==="off"){why="Last set came in 5%+ under last week: repeat last week ("+fmtT(W0,R0)+"), no progression today";tone="bad"}
+  else if(mode==="strong"){why=BUMP?"Last set beat last week by 5%+: go up one increment right now":"Last set beat last week by 5%+: push one extra rep";tone="good"}
+  else{why=BWHY}
+  if(!tone&&/jump|increments|fast|\+\d+(\.\d+)? lb/.test(why))tone="good";
+  if(!tone&&/Too heavy|reset|Big drop/.test(why))tone="bad";
+  let trend=null; const F=fw(ex.id,s);
+  if(L>0&&F&&F!==L){const ch=Pf0/perf(getSet(ex.id,F,s))-1; trend=ch<-0.05?{t:"Down "+Math.round(-ch*100)+"%",c:"bad"}:ch>0.005?{t:"Up "+Math.round(ch*100)+"%",c:"good"}:{t:"Holding",c:""};}
+  return {tw:TW,tr:TR,why,tone,mode,trend};
+}
+
+/* ---------------- Nutrition + check-in math ---------------- */
+function nutrition(){
+  const st=S.settings; const bw=+st.bw||0, bf=(+st.bf||0)/100;
+  const lbm=bw*(1-bf), lbmKg=lbm/LBKG, bmr=Math.round(370+21.6*lbmKg);
+  const maint=st.maint>0?+st.maint:Math.round(bmr*1.6/10)*10;
+  const rate=st.rate>0?st.rate/100:(bf>=0.15?0.01:bf>=0.10?0.0075:0.005);
+  const lossLb=Math.round(bw*rate*100)/100, deficit=Math.round(lossLb*3500/7/10)*10;
+  const kcal=Math.max(Math.round((maint-deficit)/10)*10,bmr);
+  const protein=Math.round(lbmKg*2.7), fat=Math.round(kcal*0.25/9), carbs=Math.max(0,Math.round((kcal-protein*4-fat*9)/4));
+  return {lbm,bmr,maint,rate,lossLb,deficit,kcal,protein,fat,carbs,steps:+st.steps||0,estMaint:!(st.maint>0)};
+}
+function checkinRows(){
+  const n=nutrition(); const w=S.checkins.weeks; const out=[]; let cal=n.kcal, adj=0;
+  w.forEach((e,i)=>{
+    const prev=i>0?w[i-1]:null; if(i>0)cal=Math.max(cal+adj,n.bmr);
+    let lost=null,pct=null,act="",tone="";adj=0;
+    if(prev&&e.weight>0&&prev.weight>0){lost=Math.round((prev.weight-e.weight)*10)/10;pct=lost/prev.weight;}
+    if(i===0){act=e.weight>0?"Baseline set. Expect a bigger drop next week from water; that's normal":"Log your average weight";tone="";}
+    else if(pct==null){act="Log this week's average weight"}
+    else if(i<=1){act="Too early to judge (water). Hold calories"}
+    else if(pct<n.rate-0.0025){ if(cal-150<n.bmr){act="Too slow, and calories are at the floor: add 2,000 daily steps instead";tone="warn"} else {adj=-150;act="Too slow: eat 150 kcal less per day next week";tone="warn"} }
+    else if(pct>n.rate+0.004){adj=150;act="Losing too fast (risks muscle): eat 150 kcal more per day";tone="bad"}
+    else{act="On target: keep everything the same";tone="good"}
+    out.push({e,i,lost,pct,cal,adj,act,tone});
+  });
+  const nextCal=out.length?Math.max(out[out.length-1].cal+out[out.length-1].adj,n.bmr):n.kcal;
+  return {rows:out,nextCal,n};
+}
+
+/* ---------------- UI ---------------- */
+const app=document.getElementById("app");
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let UI={editing:null,hist:{},incEdit:null};
+function route(){const h=(location.hash||"#train").slice(1);return h||"train"}
+function lastTrained(){let best=null,t=0;Object.keys(S.ex).forEach(id=>{const ws=S.ex[id].weeks||{};Object.values(ws).forEach(arr=>(arr||[]).forEach(x=>{if(x&&x.t>t){t=x.t;best=EX[id]&&EX[id].day}}))});return {day:best,t}}
+function suggestedDay(){
+  const states=DAYS.map(d=>({d,st:dayState(d)}));
+  const inprog=states.find(x=>x.st.saw>0&&!x.st.complete&&x.st.done>0);
+  if(inprog)return inprog;
+  const lt=lastTrained(); if(!lt.day)return states[0];
+  const idx=DAYS.findIndex(d=>d.id===lt.day); return states[(idx+1)%DAYS.length];
+}
+function render(){
+  const r=route();
+  document.querySelectorAll("#tabs a").forEach(a=>a.classList.toggle("on",a.dataset.tab===r||(r.startsWith("day")&&a.dataset.tab==="train")));
+  if(!LOADED){return}
+  if(/^day[1-5]$/.test(r))renderDay(DAYS[+r.slice(3)-1]);
+  else if(r==="checkin")renderCheckin();
+  else if(r==="nutrition")renderNutrition();
+  else if(r==="plan")renderPlan();
+  else renderHome();
+}
+function storeNote(){
+  if(MODE==="local"){const has=Object.keys(S.ex).length>0, lb=lastBackup();
+    if(has&&Date.now()-lb>7*864e5)return `<div class="notice">Your log lives only on this phone. ${lb?"It's been over a week since your last backup.":"You haven't backed it up yet."} <a href="#plan">Back up now</a></div>`;
+    return "";}
+  if(STALE)return `<div class="notice">Your saved log can't be reached right now, so what you see may be out of date.</div>`;
+  return "";
+}
+function renderHome(){
+  const sug=suggestedDay(); const st=sug.st; const d=sug.d;
+  const nx=st.next||(st.complete?null:st.rows[0]);
+  const hero = `<div class="card hero">
+     <div class="label">Up next · ${esc(d.dow)}</div>
+     <h2>Day ${d.num} · ${esc(d.name)}</h2>
+     <div class="small muted">Week ${st.dw} · ${st.done}/${st.total} sets logged</div>
+     ${nx?`<div class="small"><b>${esc(nx.ex.name)}</b>, set ${nx.s+1}: <span class="num" style="font-size:20px;font-weight:700">${esc(fmtT(nx.tw,nx.tr,nx.ex.min,nx.ex.max))}</span></div>`:(st.complete?`<div class="small">Week ${st.saw} done. Next session targets are ready.</div>`:"")}
+     <div class="row-actions"><a class="btn" href="#day${d.num}" style="text-decoration:none">${st.done>0?"Continue workout":"Start workout"}</a></div>
+   </div>`;
+  const list=DAYS.map(dd=>{const s=dayState(dd);const pct=s.total?Math.round(s.done/s.total*100):0;
+    return `<a class="day" href="#day${dd.num}" style="text-decoration:none;color:inherit">
+      <div class="dn">${dd.num}<small>${esc(dd.dow.toUpperCase())}</small></div>
+      <div style="min-width:0"><div class="t">${esc(dd.name)}</div><div class="small muted">Week ${s.dw} · ${s.done}/${s.total} sets${s.complete?" · last week done":""}</div><div class="bar"><i style="width:${pct}%"></i></div></div>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></a>`}).join("");
+  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Train</h1></div></div>
+   <div class="stack">${storeNote()}${hero}
+   <div class="label">All sessions · Thu and Sun are rest days</div><div class="daylist">${list}</div></div>`;
+}
+function renderDay(day){
+  const st=dayState(day); const nx=st.next;
+  let banner;
+  if(st.saw===0){const f=st.rows[0];banner=`<div class="next"><div class="label">Start here</div><div class="what">${esc(f.ex.name)} · set 1</div><div class="why">Pick a weight you can lift ${f.ex.min}–${f.ex.max} reps, stopping 1–2 reps short of failure. The app sets every target after that.</div></div>`}
+  else if(nx){banner=`<div class="next"><div class="label">Next · Week ${st.dw}</div><div class="what">${nx.ex.ss?`<span class="ss">${nx.ex.ss}</span> `:""}${esc(nx.ex.name)} · set ${nx.s+1}</div><div class="tgt">${esc(fmtT(nx.tw,nx.tr,nx.ex.min,nx.ex.max))}</div><div class="why">${esc(nx.why)}</div></div>`}
+  else{banner=`<div class="next" style="background:var(--good-bg);border-color:transparent"><div class="label">Week ${st.saw} complete</div><div class="what">Next session is week ${st.saw+1}. Targets below are already set.</div></div>`}
+  const byEx=[];st.rows.forEach(r=>{let g=byEx.find(x=>x.ex===r.ex);if(!g){g={ex:r.ex,rows:[]};byEx.push(g)}g.rows.push(r)});
+  const cards=byEx.map(g=>exCard(g,st)).join("");
+  app.innerHTML=`<div class="top"><a class="iconbtn" href="#train" aria-label="Back to sessions"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></a>
+     <div class="grow"><div class="sub">Day ${day.num} · ${esc(day.dow)}</div><h1>${esc(day.name)}</h1></div><span class="chip accent">Week ${st.dw}</span></div>
+   <div class="stack">${storeNote()}${banner}${cards}
+   <p class="note">Superset pairs (A1 + A2, B1 + B2, C1 + C2): do the 1, go straight to the 2, rest about 90 s, repeat. LP = 3–6 half reps in the stretch after failure.</p></div>`;
+  bindDay(day,st);
+}
+function exCard(g,st){
+  const ex=g.ex; const i=incOf(ex); const r0=g.rows[0];
+  const trend=g.rows.map(r=>r.trend).find(Boolean);
+  const downTwice=(()=>{const L=lw(ex.id,0);if(L<3)return false;const a=perf(getSet(ex.id,L,0)),b=perf(getSet(ex.id,L-1,0)),c=perf(getSet(ex.id,L-2,0));return a!=null&&b!=null&&c!=null&&b<c*0.95&&a<c*0.95})();
+  const rows=g.rows.map(r=>setRow(r,st)).join("");
+  const histOpen=UI.hist[ex.id];
+  let hist="";
+  if(histOpen){const ks=Object.keys((S.ex[ex.id]||{}).weeks||{}).map(Number).filter(k=>{for(let s=0;s<ex.sets;s++)if(getSet(ex.id,k,s))return true;return false}).sort((a,b)=>b-a);
+    hist=`<div class="hist">${ks.length?`<table><thead><tr><th>Week</th>${Array.from({length:ex.sets},(_,s)=>`<th>Set ${s+1}</th>`).join("")}</tr></thead><tbody>${ks.map(k=>`<tr><td>${k}</td>${Array.from({length:ex.sets},(_,s)=>{const x=getSet(ex.id,k,s);return `<td>${x?esc(fmtT(x.w,x.r)):"–"}</td>`}).join("")}</tr>`).join("")}</tbody></table>`:`<div class="note">No sets logged yet.</div>`}</div>`}
+  const incEd=UI.incEdit===ex.id?`<div class="logger edit"><div class="field"><span class="label">Smallest weight jump for this exercise (lb)</span>
+     <div class="row-actions"><input id="inc-${ex.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${i}" style="border:1px solid var(--line);border-radius:10px;padding:8px;width:110px;background:var(--surface)"><button class="btn small" data-act="incsave" data-ex="${ex.id}">Save</button><button class="btn ghost small" data-act="inccancel">Cancel</button></div>
+     <span class="note">Use your gym's real step: dumbbells usually 5 lb each, cable stacks 5–10 lb, plate machines 10–20 lb. 0 = bodyweight.</span></div></div>`:"";
+  return `<section class="ex" id="ex-${ex.id}"><div class="ex-h">
+     <div class="nm">${ex.ss?`<span class="ss">${ex.ss}</span>`:""}<span>${esc(ex.name)}</span></div>
+     <div class="ex-meta"><span class="chip">${ex.min}–${ex.max} reps</span><span class="chip">${esc(ex.effort)}</span>
+       <button class="chip" data-act="inc" data-ex="${ex.id}" aria-label="Change weight jump">${i>0?"+"+fmtW(i)+" lb steps":"Bodyweight"}</button>
+       ${trend?`<span class="chip ${trend.c}">${esc(trend.t)}${downTwice?" · do 1 fewer set":""}</span>`:""}</div>
+     ${ex.note?`<div class="note">${esc(ex.note)}</div>`:""}</div>
+     ${incEd}<div class="sets">${rows}</div>
+     <div style="padding:8px 14px 12px;border-top:1px solid var(--line)"><button class="linkbtn" data-act="hist" data-ex="${ex.id}">${histOpen?"Hide history":"Show history"}</button></div>${hist}</section>`;
+}
+function setRow(r,st){
+  const key=r.ex.id+":"+r.s; const isNext=st.next===r; const editing=UI.editing===key||(UI.editing==null&&isNext);
+  const lastTxt=r.last?`Last: ${esc(fmtT(r.last.w,r.last.r))}`:"";
+  if(r.logged&&!editing){
+    return `<button class="set done" data-act="edit" data-key="${key}"><span class="sn">${r.s+1}</span><span><span class="tg">✓ ${esc(fmtT(r.logged.w,r.logged.r))}</span><span class="why">Logged · tap to change</span></span><span class="last">${r.status==="D"&&r.L===st.dw?"":lastTxt}</span></button>`;
+  }
+  const t=fmtT(r.tw,r.tr,r.ex.min,r.ex.max);
+  const head=`<button class="set ${isNext?"isnext":""}" data-act="edit" data-key="${key}" aria-expanded="${editing}"><span class="sn">${r.s+1}</span><span style="min-width:0"><span class="tg">${esc(t)}</span><span class="why ${r.tone}">${esc(r.why)}</span></span><span class="last">${lastTxt}</span></button>`;
+  if(!editing)return head;
+  const w0=r.logged?r.logged.w:(r.tw!=null?r.tw:(r.last?r.last.w:""));
+  const reps0=r.logged?r.logged.r:(r.tr!=null?r.tr:"");
+  const i=incOf(r.ex);
+  return head+`<form class="logger ${r.logged?"edit":""}" data-key="${key}">
+    <div class="fields">
+      <label class="field"><span class="label">Weight (lb)</span><span class="stepper"><button type="button" data-step="w" data-d="-1" aria-label="Less weight">−</button><input id="w-${key}" name="w" type="number" inputmode="decimal" min="0" step="any" value="${w0===""||w0==null?"":fmtW(w0)}" placeholder="0"><button type="button" data-step="w" data-d="1" aria-label="More weight">+</button></span></label>
+      <label class="field"><span class="label">Reps</span><span class="stepper"><button type="button" data-step="r" data-d="-1" aria-label="One fewer rep">−</button><input id="r-${key}" name="r" type="number" inputmode="numeric" min="0" step="1" value="${reps0}" placeholder="0"><button type="button" data-step="r" data-d="1" aria-label="One more rep">+</button></span></label>
+    </div>
+    <div class="row-actions"><button class="btn" type="submit">${r.logged?"Save change":"Log set "+(r.s+1)}</button>${r.logged?`<button class="btn danger" type="button" data-act="remove">Remove</button>`:""}${UI.editing?`<button class="btn ghost" type="button" data-act="close">Close</button>`:""}</div>
+    ${i>0?`<span class="note">− / + moves weight by your ${fmtW(i)} lb step.</span>`:""}
+  </form>`;
+}
+function bindDay(day,st){
+  app.querySelectorAll("[data-act]").forEach(el=>el.addEventListener("click",ev=>{
+    const a=el.dataset.act;
+    if(a==="edit"){const k=el.dataset.key;UI.editing=(UI.editing===k)?"__none__":k;render();const f=app.querySelector(`form[data-key="${k}"] input[name=w]`);if(f)f.focus({preventScroll:true});}
+    else if(a==="close"){UI.editing="__none__";render()}
+    else if(a==="hist"){UI.hist[el.dataset.ex]=!UI.hist[el.dataset.ex];render()}
+    else if(a==="inc"){UI.incEdit=UI.incEdit===el.dataset.ex?null:el.dataset.ex;render()}
+    else if(a==="inccancel"){UI.incEdit=null;render()}
+    else if(a==="incsave"){const id=el.dataset.ex;const v=parseFloat(document.getElementById("inc-"+id).value);if(!(v>=0)){toast("Enter 0 or more.");return}
+      S.settings.inc=Object.assign({},S.settings.inc,{[id]:v});UI.incEdit=null;save("settings");render();toast("Weight step saved. Targets updated.")}
+    else if(a==="remove"){const f=el.closest("form");const [id,s]=f.dataset.key.split(":");const ws=S.ex[id]&&S.ex[id].weeks;
+      if(ws&&ws[st.dw]){ws[st.dw][+s]=null;}UI.editing=null;save("ex-"+id);render();toast("Set removed.")}
+  }));
+  app.querySelectorAll("[data-step]").forEach(b=>b.addEventListener("click",()=>{
+    const f=b.closest("form");const [id]=f.dataset.key.split(":");const inp=f.querySelector(`input[name=${b.dataset.step}]`);
+    const step=b.dataset.step==="w"?(incOf(EX[id])||1):1;const v=(parseFloat(inp.value)||0)+(+b.dataset.d)*step;inp.value=fmtW(Math.max(0,v));}));
+  app.querySelectorAll("form.logger").forEach(f=>f.addEventListener("submit",ev=>{
+    ev.preventDefault();const [id,s]=f.dataset.key.split(":");const ex=EX[id];
+    const w=parseFloat(f.w.value);const r=parseInt(f.r.value,10);
+    if(!(r>=1)){toast("Enter how many reps you did.");return}
+    if(!(w>=0)&&ex.inc>0){toast("Enter the weight you used, or 0 for bodyweight.");return}
+    const k=st.dw; S.ex[id]=S.ex[id]||{weeks:{}}; const wk=S.ex[id].weeks[k]=(S.ex[id].weeks[k]||[]).slice();
+    while(wk.length<ex.sets)wk.push(null);
+    const wasLogged=!!wk[+s]; wk[+s]={w:isNaN(w)?0:w,r,t:Date.now()}; S.ex[id].weeks[k]=wk;
+    UI.editing=null; save("ex-"+id); render();
+    if(!wasLogged)startRest(ex,day);
+  }));
+}
+/* rest timer */
+let restT=null,restEnd=0;
+function startRest(ex,day){
+  const st=dayState(day); const nx=st.next; const restEl=document.getElementById("rest");
+  let secs=ex.rest; let head;
+  if(!nx){head=st.complete?"Session complete. Nice work.":"All sets logged."; secs=0}
+  else if(nx.ex!==ex&&ex.ss&&ex.ss[1]==="1"&&nx.ex.ss===ex.ss[0]+"2"){head="Superset: go straight to "+nx.ex.ss;secs=15}
+  else head="Next: "+nx.ex.name+", set "+(nx.s+1);
+  const tgt=nx?fmtT(nx.tw,nx.tr,nx.ex.min,nx.ex.max):"";
+  clearInterval(restT); restEnd=Date.now()+secs*1000;
+  const tick=()=>{const left=Math.max(0,Math.round((restEnd-Date.now())/1000));
+    restEl.innerHTML=`<div class="clock">${secs?Math.floor(left/60)+":"+String(left%60).padStart(2,"0"):"✓"}</div><div class="info"><b>${esc(head)}</b>${esc(tgt)}</div><button type="button" id="restx">${left>0?"Skip":"Close"}</button>`;
+    document.getElementById("restx").onclick=()=>{clearInterval(restT);restEl.hidden=true};
+    if(left<=0&&secs){clearInterval(restT);restEl.querySelector(".clock").textContent="Go";}};
+  restEl.hidden=false; tick(); if(secs)restT=setInterval(tick,500);
+}
+function renderNutrition(){
+  const st=S.settings,n=nutrition();
+  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Nutrition</h1></div></div>
+  <div class="stack">${storeNote()}
+   ${st.example?`<div class="notice">These are example numbers (190 lb, 15% body fat). Replace them with yours.</div>`:""}
+   <form class="card form" id="nform">
+    <label>Bodyweight (lb)<input id="n-bw" type="number" inputmode="decimal" step="0.1" value="${esc(st.bw)}"><span class="hint">Morning average</span></label>
+    <label>Body fat %<input id="n-bf" type="number" inputmode="decimal" step="0.5" value="${esc(st.bf)}"><span class="hint">A mirror estimate is fine</span></label>
+    <label>Maintenance kcal<input id="n-maint" type="number" inputmode="numeric" value="${st.maint>0?esc(st.maint):""}" placeholder="${n.estMaint?n.maint+" (est.)":""}"><span class="hint">Optional: calories that held your weight steady</span></label>
+    <label>Loss per week %<input id="n-rate" type="number" inputmode="decimal" step="0.05" value="${st.rate>0?esc(st.rate):""}" placeholder="${(n.rate*100).toFixed(2)} (auto)"><span class="hint">Optional: 0.2–1.5</span></label>
+    <label>Daily steps<input id="n-steps" type="number" inputmode="numeric" step="500" value="${esc(st.steps)}"></label>
+   </form>
+   <div class="kpis">
+    <div class="kpi key"><span class="label">Daily calories</span><b>${n.kcal.toLocaleString()}</b><span class="note">to start; check-ins adjust it</span></div>
+    <div class="kpi"><span class="label">Protein</span><b>${n.protein} g</b><span class="note">2.7 g/kg lean mass</span></div>
+    <div class="kpi"><span class="label">Fat</span><b>${n.fat} g</b><span class="note">25% of calories</span></div>
+    <div class="kpi"><span class="label">Carbs</span><b>${n.carbs} g</b><span class="note">most around training</span></div>
+    <div class="kpi"><span class="label">Target loss</span><b>${n.lossLb} lb</b><span class="note">${(n.rate*100).toFixed(2)}% of bodyweight a week</span></div>
+    <div class="kpi"><span class="label">Steps</span><b>${n.steps.toLocaleString()}</b><span class="note">every day</span></div>
+   </div>
+   <div class="card small"><div class="label" style="margin-bottom:6px">How it's worked out</div>
+    Lean mass ${Math.round(n.lbm)} lb → resting burn ${n.bmr.toLocaleString()} kcal (Katch-McArdle) → maintenance ${n.maint.toLocaleString()} kcal${n.estMaint?" (resting burn × 1.6)":" (yours)"} → deficit ${n.deficit} kcal/day. Calories never go below your resting burn; if progress stalls there, add steps instead.
+    Rate: 1% a week at 15%+ body fat, 0.75% at 10–15%, 0.5% when leaner, because faster cuts lose more muscle.</div>
+  </div>`;
+  let tmr=null;
+  app.querySelectorAll("#nform input").forEach(inp=>inp.addEventListener("input",()=>{clearTimeout(tmr);tmr=setTimeout(()=>{
+    const g=id=>{const v=parseFloat(document.getElementById(id).value);return isNaN(v)?null:v};
+    const bw=g("n-bw"),bf=g("n-bf");if(!(bw>50)||!(bf>2&&bf<60))return;
+    const rate=g("n-rate");
+    Object.assign(S.settings,{bw,bf,maint:g("n-maint"),rate:(rate>=0.2&&rate<=1.5)?rate:null,steps:g("n-steps")||0,example:false});
+    save("settings");const f=document.activeElement&&document.activeElement.id;renderNutrition();if(f){const el=document.getElementById(f);if(el){el.focus();try{const L=el.value.length;el.setSelectionRange&&el.type!=="number"&&el.setSelectionRange(L,L)}catch(e){}}}
+  },500)}));
+}
+function renderCheckin(){
+  const c=checkinRows(); const today=new Date().toISOString().slice(0,10);
+  const rows=c.rows.slice().reverse().map(x=>`<tr><td>${x.i+1}</td><td>${esc(x.e.date||"")}</td><td>${x.e.weight>0?x.e.weight.toFixed(1):"–"}</td><td>${x.lost!=null?x.lost.toFixed(1):"–"}</td><td>${x.pct!=null?(x.pct*100).toFixed(2)+"%":"–"}</td><td>${x.cal.toLocaleString()}</td><td class="wrap">${x.tone?`<span class="status ${x.tone}">${esc(x.act)}</span>`:esc(x.act)}</td></tr>`).join("");
+  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Weekly check-in</h1></div></div>
+  <div class="stack">${storeNote()}
+   <div class="kpis"><div class="kpi key"><span class="label">Eat this week</span><b>${c.nextCal.toLocaleString()} kcal</b><span class="note">per day</span></div>
+     <div class="kpi"><span class="label">Target loss</span><b>${(c.n.rate*100).toFixed(2)}%</b><span class="note">${c.n.lossLb} lb a week</span></div></div>
+   <form class="card form" id="cform">
+     <label>Week starting<input id="c-date" type="date" value="${today}"></label>
+     <label>Avg morning weight (lb)<input id="c-w" type="number" inputmode="decimal" step="0.1" required></label>
+     <label>Waist at navel (in)<input id="c-waist" type="number" inputmode="decimal" step="0.1"><span class="hint">Optional</span></label>
+     <label>Avg daily steps<input id="c-steps" type="number" inputmode="numeric" step="100"><span class="hint">Optional</span></label>
+     <div style="display:flex;align-items:end"><button class="btn" type="submit" style="width:100%">Add week ${c.rows.length+1}</button></div>
+   </form>
+   <p class="note">Weigh every morning after the bathroom and log the 7-day average. Weeks 1–2 never change calories because early drops are mostly water. After that: more than 0.25 points slower than target → 150 kcal less; more than 0.4 points faster → 150 kcal more.</p>
+   ${c.rows.length?`<div class="tbl"><table><thead><tr><th>Wk</th><th>Date</th><th>Weight</th><th>Lost</th><th>% BW</th><th>Calories</th><th>What to do</th></tr></thead><tbody>${rows}</tbody></table></div>
+   <div><button class="btn danger small" id="cundo">Remove week ${c.rows.length}</button></div>`:`<div class="card small muted">No check-ins yet. Add your first weekly average above to set your baseline.</div>`}
+  </div>`;
+  document.getElementById("cform").addEventListener("submit",ev=>{ev.preventDefault();
+    const v=id=>{const x=parseFloat(document.getElementById(id).value);return isNaN(x)?null:x};
+    const weight=v("c-w"); if(!(weight>50)){toast("Enter your average morning weight in lb.");return}
+    S.checkins.weeks=S.checkins.weeks.concat([{date:document.getElementById("c-date").value,weight,waist:v("c-waist"),steps:v("c-steps")}]);
+    save("checkins");renderCheckin();toast("Week added.")});
+  const u=document.getElementById("cundo"); if(u)u.addEventListener("click",()=>{S.checkins.weeks=S.checkins.weeks.slice(0,-1);save("checkins");renderCheckin();});
+}
+function renderPlan(){
+  const src=(t,u)=>`<a href="${u}" target="_blank" rel="noopener">${esc(t)}</a>`;
+  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>The plan</h1></div></div>
+  <div class="stack prose">
+   <div class="card"><h3>Week</h3><ul><li>Mon: Day 1 Chest &amp; Back</li><li>Tue: Day 2 Shoulders &amp; Arms</li><li>Wed: Day 3 Legs</li><li>Thu: rest, 25–30 min cycling or incline walk</li><li>Fri: Day 4 Chest &amp; Back</li><li>Sat: Day 5 Shoulders &amp; Arms, then 20–30 min cycling</li><li>Sun: rest, long walk</li></ul></div>
+   <div class="card"><h3>How the app coaches you</h3><dl>
+    <dt>Strength estimate</dt><dd>Each set becomes an estimated max using a formula fitted to 303,494 real sets, which handles light isolation lifts far better than the classic Epley formula.<span class="src">${src("Fitbod 2026, arXiv 2603.17495","https://arxiv.org/pdf/2603.17495")}</span></dd>
+    <dt>Next set, live</dt><dd>Predicted from the set you just did, minus the usual rep drop for your rest: about 10% on supersets and leg compounds, about 15% on straight sets.<span class="src">${src("Senna 2011: rest interval and reps per set","https://pmc.ncbi.nlm.nih.gov/articles/PMC3763284/")}</span></dd>
+    <dt>Adding weight</dt><dd>Only when your numbers say you'll still hit the rep minimum at the new weight; 2–3 jumps when you have the reps. If your gym's next step is too big, it keeps adding reps instead.<span class="src">${src("Plotkin 2022: rep vs load progression","https://peerj.com/articles/14142")}</span></dd>
+    <dt>Off and strong sets</dt><dd>5%+ better than the same set last week: go up now. 5%+ worse: repeat last week's numbers.</dd>
+    <dt>Stalls and drops</dt><dd>No progress 3 sessions running: reset 10% lighter. Down 5%+ two weeks running: do 1 fewer set of that exercise.</dd>
+   </dl></div>
+   <div class="card"><h3>Training rules</h3><dl>
+    <dt>Effort</dt><dd>Machine presses, pulldowns, rows, hack squat, RDL: stop 1–2 reps short every set. Isolation: last set to failure.<span class="src">${src("Refalo 2024","https://openrepository.aut.ac.nz/items/dbe641c7-a606-4e00-94bc-bb2fbe253afa/full")}</span></dd>
+    <dt>Supersets</dt><dd>Same growth as straight sets in less time.<span class="src">${src("Sports Medicine 2025 meta-analysis","https://eprints.leedsbeckett.ac.uk/id/eprint/11908")}</span></dd>
+    <dt>Volume while cutting</dt><dd>Keep sets as written (about 14–16 hard sets per muscle a week).<span class="src">${src("Roth 2023","https://myoton.com/publication/resistance-training-volume-does-not-influence-lean-mass-preservation-during-energy-restriction-in-trained-males/")}</span></dd>
+    <dt>Tempo and rest</dt><dd>Control the lowering (~2 s), pause in the stretch. ~90 s between rounds, 2–3 min on leg compounds.<span class="src">${src("Singer 2024","https://doaj.org/article/18363f4031e0487793db2084bee23f38")}</span></dd>
+    <dt>Log honestly</dt><dd>People usually have about 1 more rep left than they think. Consistent effort keeps targets accurate.<span class="src">${src("Halperin 2022","https://sportrxiv.org/index.php/server/preprint/view/67")}</span></dd>
+   </dl></div>
+   <div class="card"><h3>Fat loss</h3><dl>
+    <dt>Rate</dt><dd>1% of bodyweight a week at 15%+ body fat, slower as you get leaner.<span class="src">${src("Garthe 2011","https://lida.sport-iat.de/ta/Record/4017680?lng=en")} · ${src("Helms 2014","https://pmc.ncbi.nlm.nih.gov/articles/PMC4033492/")}</span></dd>
+    <dt>Cardio</dt><dd>Steps daily; 2–3 cycling or incline-walk sessions, never right before legs.<span class="src">${src("Lundberg 2022","https://biolayne.com/reps/issue-8/concurrent-training-cardio-will-probably-not-kill-your-gains/")}</span></dd>
+    <dt>Supplements</dt><dd>Creatine 3–5 g a day; caffeine before training if you like it.</dd>
+   </dl></div>
+   <div class="card"><h3>Your data</h3><p class="small muted">Your log is saved only on this phone and works with no internet. Back it up every week or so, and keep the app on your Home Screen so iPhone doesn't clear it.${lastBackup()?" Last backup: "+new Date(lastBackup()).toLocaleDateString()+".":""}</p>
+    <div class="row-actions"><button class="btn small" id="dsave">Save backup file</button><button class="btn ghost small" id="dcopy">Copy my data</button></div>
+    <textarea id="dbox" readonly hidden rows="5" style="width:100%;margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:12px;background:var(--surface-2);color:var(--ink)"></textarea>
+    <h3 style="margin-top:14px">Restore</h3><p class="small muted">Paste data copied from the claude.ai app or a backup, or pick a backup file.</p>
+    <textarea id="dpaste" rows="4" placeholder="Paste here" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:13px;background:var(--surface);color:var(--ink)"></textarea>
+    <div class="row-actions"><button class="btn small" id="drestore">Restore</button><label class="btn ghost small" style="cursor:pointer">Choose file<input id="dfile" type="file" accept=".json,application/json,text/plain" hidden></label></div></div>
+  </div>`;
+  document.getElementById("dcopy").addEventListener("click",copyData);
+  document.getElementById("dsave").addEventListener("click",saveFile);
+  document.getElementById("drestore").addEventListener("click",()=>restoreText(document.getElementById("dpaste").value));
+  document.getElementById("dfile").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(restoreText);e.target.value=""});
+}
+let toastT=null;
+function toast(msg){let t=document.querySelector(".toast");if(!t){t=document.createElement("div");t.className="toast";t.setAttribute("role","status");document.body.appendChild(t)}t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},3200)}
+window.addEventListener("hashchange",()=>{UI.editing=null;UI.incEdit=null;render();window.scrollTo(0,0)});
+// keep the screen awake during a workout when allowed
+let wl=null;async function wake(){try{if(navigator.wakeLock&&!wl){wl=await navigator.wakeLock.request("screen");wl.addEventListener("release",()=>{wl=null})}}catch(e){}}
+document.addEventListener("click",wake,{once:true});document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&wl===null&&route().startsWith("day"))wake()});
+window.__engine={E1,RA,dayState,DAYS,setS:x=>{S=x},nutrition,checkinRows};
+initStore();
+if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+})();
+</script>
+</body>
+</html>
