@@ -575,6 +575,42 @@ function bindDay(day,st){
 }
 /* rest timer */
 let restT=null,restEnd=0;
+/* ---------------- Lock-screen rest alerts (Web Push via your Cloudflare worker) ---------------- */
+const PUSH_DEFAULT="";
+const pushUrl=()=>(S.settings.pushUrl||PUSH_DEFAULT).trim().replace(/\/+$/,"");
+const standalone=()=>window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+function pushSub(){try{return JSON.parse(localStorage.getItem(LSKEY+"-push")||"null")}catch(e){return null}}
+const pushOn=()=>!!(pushUrl()&&pushSub()&&S.settings.push!==false);
+function pushPost(path,extra){const sub=pushSub();if(!sub||!pushUrl())return Promise.resolve(null);
+  return fetch(pushUrl()+path,{method:"POST",headers:{"Content-Type":"application/json"},keepalive:true,body:JSON.stringify(Object.assign({sub},extra||{}))}).catch(()=>null)}
+function schedulePush(secs,title,body){if(pushOn())pushPost("/schedule",{delay:Math.round(secs),title,body})}
+function cancelPush(){if(pushOn())pushPost("/cancel")}
+function u8(b64){b64=b64.replace(/-/g,"+").replace(/_/g,"/");while(b64.length%4)b64+="=";const s=atob(b64);return Uint8Array.from(s,c=>c.charCodeAt(0))}
+async function enablePush(){
+  if(!("Notification" in window)||!("PushManager" in window)||!("serviceWorker" in navigator)){toast(standalone()?"This phone can't do web notifications (needs iOS 16.4 or newer).":"Open Shred Coach from its Home Screen icon first, then turn this on.");return}
+  const perm=await Notification.requestPermission();
+  if(perm!=="granted"){toast("Notifications are blocked. Turn them on in iPhone Settings › Notifications › Shred Coach.");return}
+  const url=pushUrl(); if(!url){toast("Paste your server link first.");return}
+  try{const reg=await navigator.serviceWorker.ready;
+    const {key}=await (await fetch(url+"/vapid")).json();
+    let sub=await reg.pushManager.getSubscription();
+    if(sub&&sub.options&&sub.options.applicationServerKey){const cur=new Uint8Array(sub.options.applicationServerKey),want=u8(key);if(cur.length!==want.length||cur.some((b,i)=>b!==want[i])){await sub.unsubscribe();sub=null}}
+    if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:u8(key)});
+    localStorage.setItem(LSKEY+"-push",JSON.stringify(sub)); S.settings.push=true; save("settings");
+    toast("Lock-screen alerts on. Sending a test in 5 seconds: lock your phone."); pushPost("/schedule",{delay:5,title:"Shred Coach",body:"Test: rest alerts are working."}); render();
+  }catch(e){toast("Couldn't reach the server. Check the link and that you're online.")}
+}
+function pushCard(){const on=pushOn();
+  return `<div class="card"><h3>Lock-screen rest alerts</h3><p class="small muted">${on?"On: you'll get a notification when rest is over, even with the phone locked. Needs internet at the gym.":standalone()?"Get a notification when rest is over, even with your phone locked.":"Open Shred Coach from its Home Screen icon to turn this on."}</p>
+    ${PUSH_DEFAULT?"":`<label class="small" style="display:block;margin:6px 0">Server link<input id="purl" type="url" placeholder="https://shred-coach.yourname.workers.dev" value="${esc(S.settings.pushUrl||"")}" style="width:100%;margin-top:4px;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:14px;background:var(--surface);color:var(--ink)"></label>`}
+    <div class="row-actions">${on?`<button class="btn ghost small" id="ptest">Send test</button><button class="btn ghost small" id="poff">Turn off</button>`:`<button class="btn small" id="pon">Turn on</button>`}</div></div>`}
+function bindPush(){const g=id=>document.getElementById(id);
+  const pu=g("purl"); if(pu)pu.addEventListener("change",()=>{S.settings.pushUrl=pu.value.trim();save("settings")});
+  if(g("pon"))g("pon").addEventListener("click",()=>{if(pu)S.settings.pushUrl=pu.value.trim();enablePush()});
+  if(g("ptest"))g("ptest").addEventListener("click",()=>{pushPost("/schedule",{delay:5,title:"Shred Coach",body:"Test: rest alerts are working."});toast("Test coming in 5 seconds: lock your phone.")});
+  if(g("poff"))g("poff").addEventListener("click",()=>{S.settings.push=false;save("settings");render();toast("Lock-screen alerts off.")});
+}
+
 /* ---------------- Rest-over alert (sound + flash) ---------------- */
 let AC=null, beepNodes=[];
 function audio(){try{
@@ -598,10 +634,10 @@ function startRest(ex,day){
   const tick=()=>{const left=Math.max(0,Math.round((restEnd-Date.now())/1000));
     const snd=S.settings.sound!==false;
     restEl.innerHTML=`<div class="clock">${secs?Math.floor(left/60)+":"+String(left%60).padStart(2,"0"):"✓"}</div><div class="info"><b>${esc(head)}</b>${esc(tgt)}</div>${secs?`<button type="button" id="rests" aria-label="${snd?"Turn alert sound off":"Turn alert sound on"}">${snd?"🔔":"🔕"}</button>`:""}<button type="button" id="restx">${left>0?"Skip":"Close"}</button>`;
-    document.getElementById("restx").onclick=()=>{clearInterval(restT);cancelBeep();restEl.hidden=true;restEl.classList.remove("over")};
+    document.getElementById("restx").onclick=()=>{clearInterval(restT);cancelBeep();if(left>0)cancelPush();restEl.hidden=true;restEl.classList.remove("over")};
     const sb=document.getElementById("rests"); if(sb)sb.onclick=()=>{S.settings.sound=!snd;save("settings");if(S.settings.sound)scheduleBeep(Math.max(0,(restEnd-Date.now())/1000));else cancelBeep();tick()};
     if(left<=0&&secs){clearInterval(restT);restEl.querySelector(".clock").textContent="Go";restEl.classList.add("over");try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}}};
-  restEl.classList.remove("over"); restEl.hidden=false; if(secs)scheduleBeep(secs); else cancelBeep(); tick(); if(secs)restT=setInterval(tick,500);
+  restEl.classList.remove("over"); restEl.hidden=false; if(secs){scheduleBeep(secs);schedulePush(secs,"Rest over: go",(nx?head.replace(/^Next: /,"")+" · "+tgt:""))} else {cancelBeep();cancelPush()} tick(); if(secs)restT=setInterval(tick,500);
 }
 function renderNutrition(){
   const st=S.settings,n=nutrition();
@@ -686,6 +722,7 @@ function renderPlan(){
     <dt>Deloads</dt><dd>None scheduled: a planned week off didn't add growth and slightly cost strength. Take an easy week (half the sets) only if joints ache or you're weaker 2 weeks running.<span class="src">${src("Coleman 2024","https://peerj.com/articles/16777")}</span></dd>
     <dt>Supplements</dt><dd>Creatine 3–5 g a day; caffeine before training if you like it.</dd>
    </dl></div>
+   ${pushCard()}
    <div class="card"><h3>Your data</h3><p class="small muted">Your log is saved only on this phone and works with no internet. Back it up every week or so, and keep the app on your Home Screen so iPhone doesn't clear it.${lastBackup()?" Last backup: "+new Date(lastBackup()).toLocaleDateString()+".":""}</p>
     <div class="row-actions"><button class="btn small" id="dsave">Save backup file</button><button class="btn ghost small" id="dcopy">Copy my data</button></div>
     <textarea id="dbox" readonly hidden rows="5" style="width:100%;margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:12px;background:var(--surface-2);color:var(--ink)"></textarea>
@@ -694,6 +731,7 @@ function renderPlan(){
     <div class="row-actions"><button class="btn small" id="drestore">Restore</button><label class="btn ghost small" style="cursor:pointer">Choose file<input id="dfile" type="file" accept=".json,application/json,text/plain" hidden></label></div></div>
   </div>`;
   document.getElementById("dcopy").addEventListener("click",copyData);
+  bindPush();
   document.getElementById("dsave").addEventListener("click",saveFile);
   document.getElementById("drestore").addEventListener("click",()=>restoreText(document.getElementById("dpaste").value));
   document.getElementById("dfile").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(restoreText);e.target.value=""});

@@ -1,0 +1,1 @@
+{ "name": "shred-coach-push", "private": true, "scripts": { "deploy": "wrangler deploy" } }
