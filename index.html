@@ -109,6 +109,7 @@ button{cursor:pointer}
 .hist table{border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;width:100%}
 .hist th,.hist td{padding:4px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
 .meta{font-size:12.5px;color:var(--muted);line-height:1.4}.meta .bad{color:var(--bad)}
+.pair{font-size:12.5px;color:var(--muted);margin-top:4px}
 .linkbtn.plain{color:inherit;font:inherit;text-decoration:underline dotted;text-underline-offset:2px}
 .ex-h .nm .grow{flex:1;min-width:0}
 .set .tg.dim{color:var(--muted);font-size:17px;font-weight:500}
@@ -229,6 +230,11 @@ const DAYS=RAW.map(([id,name,dow,exs],i)=>({id,num:i+1,name,dow,ex:exs.map(a=>{
   return {id:eid,ss,name:nm,sets,min,max,inc,effort,note,drop,rest,day:id};
 })}));
 const EX={}; DAYS.forEach(d=>d.ex.forEach(e=>EX[e.id]=e));
+// Supersets can be split per pair (machines too far apart): then they run as straight sets with 2 min rest
+const pairKey=ex=>ex.day+":"+ex.ss[0];
+function isSS(ex){return !!(ex&&ex.ss)&&!((S.settings.split||{})[pairKey(ex)])}
+function partner(ex){if(!ex.ss)return null;const d=DAYS.find(d=>d.id===ex.day);return d.ex.find(e=>e.ss===ex.ss[0]+(ex.ss[1]==="1"?"2":"1"))||null}
+function restOf(ex){if(ex.ss&&!isSS(ex))return 120;return ex.rest}
 
 /* ---------------- State + storage ---------------- */
 const DEF_SETTINGS={bw:190,bf:15,maint:null,rate:null,steps:11000,example:true,inc:{}};
@@ -330,7 +336,7 @@ function dayState(day){
   rows.forEach((row,i)=>Object.assign(row,target(row,i>0&&rows[i-1].ex===row.ex?rows[i-1]:null,saw)));
   rows.forEach(r=>{r.logged=getSet(r.ex.id,dw,r.s); r.last=r.L?getSet(r.ex.id,r.L,r.s):null;});
   // order sets the way you actually do them: supersets alternate A1 s1, A2 s1, A1 s2...
-  const gi=r=>{const ss=r.ex.ss;if(ss&&ss[1]==="2"){const p=day.ex.findIndex(e=>e.ss===ss[0]+"1");if(p>=0)return [p,1]}return [day.ex.indexOf(r.ex),0]};
+  const gi=r=>{const ss=r.ex.ss;if(isSS(r.ex)&&ss[1]==="2"){const p=day.ex.findIndex(e=>e.ss===ss[0]+"1");if(p>=0)return [p,1]}return [day.ex.indexOf(r.ex),0]};
   const order=rows.slice().sort((a,b)=>{const A=gi(a),B=gi(b);return A[0]-B[0]||a.s-b.s||A[1]-B[1]});
   const next=order.find(r=>r.status==="P"&&!r.logged)||(saw===0?order.find(r=>!r.logged):null)||null;
   const done=rows.filter(r=>r.logged).length;
@@ -492,7 +498,7 @@ function renderDay(day){
   app.innerHTML=`<div class="top"><a class="iconbtn" href="#train" aria-label="Back to sessions"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></a>
      <div class="grow"><div class="sub">Day ${day.num} · ${esc(day.dow)}</div><h1>${esc(day.name)}</h1></div><span class="chip accent">Week ${st.dw}</span></div>
    <div class="stack">${storeNote()}${banner}${cards}
-   <p class="note">A1 + A2 etc. are supersets: do 1, go straight to 2, rest ~90 s. LP = 3–6 half reps in the stretch after failure.</p></div>`;
+   <p class="note">A1 + A2 etc. are supersets: do 1, go straight to 2, rest ~90 s. Machines far apart? Tap "Do separately" on that pair. LP = 3–6 half reps in the stretch after failure.</p></div>`;
   bindDay(day,st);
   if(UI.scrollNext){UI.scrollNext=false;const el=app.querySelector(".set.isnext");if(el)setTimeout(()=>el.scrollIntoView({block:"center",behavior:"smooth"}),50);}
 }
@@ -509,8 +515,9 @@ function exCard(g,st){
      <div class="row-actions"><input id="inc-${ex.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${i}" style="border:1px solid var(--line);border-radius:10px;padding:8px;width:110px;background:var(--surface)"><button class="btn small" data-act="incsave" data-ex="${ex.id}">Save</button><button class="btn ghost small" data-act="inccancel">Cancel</button></div>
      <span class="note">Use your gym's real step: dumbbells usually 5 lb each, cable stacks 5–10 lb, plate machines 10–20 lb. 0 = bodyweight.</span></div></div>`:"";
   return `<section class="ex" id="ex-${ex.id}"><div class="ex-h">
-     <div class="nm">${ex.ss?`<span class="ss">${ex.ss}</span>`:""}<span class="grow">${esc(ex.name)}</span><button class="linkbtn" data-act="hist" data-ex="${ex.id}">${histOpen?"Hide":"History"}</button></div>
-     <div class="meta">${ex.min}–${ex.max} reps · ${esc(ex.effort)} · <button class="linkbtn plain" data-act="inc" data-ex="${ex.id}" aria-label="Change weight step">${i>0?"+"+fmtW(i)+" lb steps":"bodyweight"}</button>${ex.note?` · ${esc(ex.note)}`:""}${trend&&trend.c==="bad"?` · <b class="bad">${esc(trend.t)}${downTwice?", do 1 fewer set":""}</b>`:""}</div></div>
+     <div class="nm">${isSS(ex)?`<span class="ss">${ex.ss}</span>`:""}<span class="grow">${esc(ex.name)}</span><button class="linkbtn" data-act="hist" data-ex="${ex.id}">${histOpen?"Hide":"History"}</button></div>
+     <div class="meta">${ex.min}–${ex.max} reps · ${esc(ex.effort)} · <button class="linkbtn plain" data-act="inc" data-ex="${ex.id}" aria-label="Change weight step">${i>0?"+"+fmtW(i)+" lb steps":"bodyweight"}</button>${ex.note?` · ${esc(ex.note)}`:""}${trend&&trend.c==="bad"?` · <b class="bad">${esc(trend.t)}${downTwice?", do 1 fewer set":""}</b>`:""}</div>
+     ${ex.ss&&ex.ss[1]==="1"?`<div class="pair">${isSS(ex)?`Superset with ${esc(ex.ss[0])}2`:`Straight sets, 2 min rest`} · <button class="linkbtn plain" data-act="split" data-ex="${ex.id}">${isSS(ex)?"Machines far apart? Do separately":"Superset again"}</button></div>`:""}</div>
      ${incEd}${hist}<div class="sets">${rows}</div></section>`;
 }
 function setRow(r,st){
@@ -540,6 +547,9 @@ function bindDay(day,st){
     else if(a==="close"){UI.editing="__none__";render()}
     else if(a==="hist"){UI.hist[el.dataset.ex]=!UI.hist[el.dataset.ex];render()}
     else if(a==="inc"){UI.incEdit=UI.incEdit===el.dataset.ex?null:el.dataset.ex;render()}
+    else if(a==="split"){const ex=EX[el.dataset.ex];const k=pairKey(ex);const sp=Object.assign({},S.settings.split||{});
+      if(sp[k])delete sp[k];else sp[k]=true;S.settings.split=sp;save("settings");render();
+      toast(sp[k]?"Done: finish all sets of "+ex.name.split(" (")[0]+" first, then "+partner(ex).name.split(" (")[0]+".":"Back to a superset.")}
     else if(a==="inccancel"){UI.incEdit=null;render()}
     else if(a==="incsave"){const id=el.dataset.ex;const v=parseFloat(document.getElementById("inc-"+id).value);if(!(v>=0)){toast("Enter 0 or more.");return}
       S.settings.inc=Object.assign({},S.settings.inc,{[id]:v});UI.incEdit=null;save("settings");render();toast("Weight step saved. Targets updated.")}
@@ -565,9 +575,9 @@ function bindDay(day,st){
 let restT=null,restEnd=0;
 function startRest(ex,day){
   const st=dayState(day); const nx=st.next; const restEl=document.getElementById("rest");
-  let secs=ex.rest; let head;
+  let secs=restOf(ex); let head;
   if(!nx){head=st.complete?"Session complete. Nice work.":"All sets logged."; secs=0}
-  else if(nx.ex!==ex&&ex.ss&&ex.ss[1]==="1"&&nx.ex.ss===ex.ss[0]+"2"){head="Superset: go straight to "+nx.ex.ss;secs=15}
+  else if(nx.ex!==ex&&isSS(ex)&&ex.ss[1]==="1"&&nx.ex.ss===ex.ss[0]+"2"){head="Superset: go straight to "+nx.ex.ss;secs=15}
   else head="Next: "+nx.ex.name+", set "+(nx.s+1);
   const tgt=nx?fmtT(nx.tw,nx.tr,nx.ex.min,nx.ex.max)+(nx.mode==="fix"?" · "+(nx.tw<(getSet(nx.ex.id,st.dw,nx.s-1)||{}).w?"lighter":"heavier"):""):"";
   clearInterval(restT); restEnd=Date.now()+secs*1000;
@@ -649,7 +659,7 @@ function renderPlan(){
    </dl></div>
    <div class="card"><h3>Training rules</h3><dl>
     <dt>Effort</dt><dd>Machine presses, pulldowns, rows, hack squat, RDL: stop 1–2 reps short every set. Isolation: last set to failure.<span class="src">${src("Refalo 2024","https://openrepository.aut.ac.nz/items/dbe641c7-a606-4e00-94bc-bb2fbe253afa/full")}</span></dd>
-    <dt>Supersets</dt><dd>Same growth as straight sets in less time.<span class="src">${src("Sports Medicine 2025 meta-analysis","https://eprints.leedsbeckett.ac.uk/id/eprint/11908")}</span></dd>
+    <dt>Supersets</dt><dd>Same growth as straight sets in less time. Split a pair into straight sets (2 min rest) when the machines are far apart: growth is the same, the session is just longer.<span class="src">${src("Sports Medicine 2025 meta-analysis","https://eprints.leedsbeckett.ac.uk/id/eprint/11908")}</span></dd>
     <dt>Volume while cutting</dt><dd>Keep sets as written: about 14–16 direct hard sets a week for upper-body muscles and 7–8 for quads and hamstrings, never more than ~11 for one muscle in a session, past which extra sets add little.<span class="src">${src("Remmert 2025: sets per session","https://sportrxiv.org/index.php/server/preprint/view/537")} · ${src("Roth 2023","https://myoton.com/publication/resistance-training-volume-does-not-influence-lean-mass-preservation-during-energy-restriction-in-trained-males/")}</span></dd>
     <dt>Tempo and rest</dt><dd>Control the lowering (~2 s), pause in the stretch. ~90 s between rounds, 2–3 min on leg compounds.<span class="src">${src("Singer 2024","https://doaj.org/article/18363f4031e0487793db2084bee23f38")}</span></dd>
     <dt>Log honestly</dt><dd>People usually have about 1 more rep left than they think. Consistent effort keeps targets accurate.<span class="src">${src("Halperin 2022","https://sportrxiv.org/index.php/server/preprint/view/67")}</span></dd>
