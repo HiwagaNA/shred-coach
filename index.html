@@ -110,6 +110,15 @@ button{cursor:pointer}
 .hist th,.hist td{padding:4px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
 .meta{font-size:12.5px;color:var(--muted);line-height:1.4}.meta .bad{color:var(--bad)}
 .pair{font-size:12.5px;color:var(--muted);margin-top:4px}
+.seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.seg button{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600}
+.seg button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.card.scard h3{margin:0 0 4px}.setrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid var(--line)}
+.setrow.col{display:block}.setrow b{display:block;font-size:15px}.setrow small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.switch{appearance:none;-webkit-appearance:none;flex:none;width:48px;height:28px;border-radius:999px;background:var(--line);position:relative;transition:background .15s;margin:0}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.switch:checked{background:var(--good)}.switch:checked::after{transform:translateX(20px)}
+.warm{font-size:12.5px;color:var(--muted);padding:8px 14px 0}
+.top .iconbtn{color:var(--ink)}
 .linkbtn.plain{color:inherit;font:inherit;text-decoration:underline dotted;text-underline-offset:2px}
 .ex-h .nm .grow{flex:1;min-width:0}
 .set .tg.dim{color:var(--muted);font-size:17px;font-weight:500}
@@ -230,14 +239,16 @@ const DAYS=RAW.map(([id,name,dow,exs],i)=>({id,num:i+1,name,dow,ex:exs.map(a=>{
   const [eid,ss,nm,sets,min,max,inc,effort,note,leg]=a;
   const drop=(ss||leg)?0.10:0.15;
   const rest=leg?150:(ss&&ss[1]==="1")?15:90;
-  return {id:eid,ss,name:nm,sets,min,max,inc,effort,note,drop,rest,day:id};
+  return {id:eid,ss,name:nm,sets,min,max,inc,effort,note,drop,rest,leg:!!leg,day:id};
 })}));
 const EX={}; DAYS.forEach(d=>d.ex.forEach(e=>EX[e.id]=e));
 // Supersets can be split per pair (machines too far apart): then they run as straight sets with 2 min rest
 const pairKey=ex=>ex.day+":"+ex.ss[0];
-function isSS(ex){return !!(ex&&ex.ss)}
+function isSS(ex){return !!(ex&&ex.ss)&&opt("supersets")!==false}
 function partner(ex){if(!ex.ss)return null;const d=DAYS.find(d=>d.id===ex.day);return d.ex.find(e=>e.ss===ex.ss[0]+(ex.ss[1]==="1"?"2":"1"))||null}
-function restOf(ex){if(ex.ss&&!isSS(ex))return 120;return ex.rest}
+function restOf(ex){if(ex.leg)return opt("restLeg");if(isSS(ex)&&ex.ss[1]==="1")return opt("ssGap");return opt("restIso")}
+// rep drop to the next set depends on rest (Senna 2011): supersets and long rests ~10%, 90 s ~15%, 60 s ~20%
+function dropOf(ex){if(ex.leg||isSS(ex))return 0.10;const t=opt("restIso");return t>=120?0.10:t<=60?0.20:0.15}
 
 /* ---------------- State + storage ---------------- */
 const DEF_SETTINGS={bw:190,bf:15,maint:null,rate:null,steps:11000,example:true,inc:{}};
@@ -307,6 +318,22 @@ function restoreText(t){
   S=next; lsWrite(); toast("Restored."); render();
 }
 
+
+/* ---------------- Settings ---------------- */
+const SET_DEF={autoRest:true,restIso:90,restLeg:150,ssGap:15,sound:true,vol:"normal",warn10:false,push:true,keepAwake:true,autoScroll:true,supersets:true,warmup:"compound",coach:true,theme:"system"};
+const opt=k=>(S.settings[k]===undefined||S.settings[k]===null)?SET_DEF[k]:S.settings[k];
+function applyTheme(){const t=opt("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;else delete document.documentElement.dataset.theme}
+function seg(k,opts){const cur=opt(k);return `<div class="seg" role="radiogroup">${opts.map(([v,l])=>`<button type="button" role="radio" aria-checked="${cur===v}" class="${cur===v?"on":""}" data-set="${k}" data-val="${typeof v==="number"?"n:"+v:v}">${esc(l)}</button>`).join("")}</div>`}
+function tog(k,label,desc){return `<label class="setrow"><span><b>${esc(label)}</b>${desc?`<small>${esc(desc)}</small>`:""}</span><input type="checkbox" class="switch" data-set="${k}" ${opt(k)?"checked":""}></label>`}
+function pick(label,desc,control){return `<div class="setrow col"><span><b>${esc(label)}</b>${desc?`<small>${esc(desc)}</small>`:""}</span>${control}</div>`}
+function warmText(ex,r0){
+  const w=opt("warmup"); if(w==="off"||!r0||r0.logged)return "";
+  if(w==="compound"&&ex.effort!==C2)return ""; const i=incOf(ex); if(!i)return "";
+  if(r0.tw>0){const a=Math.max(i,fl(r0.tw*0.5,i)),b=fl(r0.tw*0.75,i);
+    return `<div class="warm">Warm-up: ${fmtW(a)} lb × 10${b>a&&b<r0.tw?`, ${fmtW(b)} lb × 5`:""}, then work sets</div>`}
+  return `<div class="warm">Warm-up: 2 light sets, about half your work weight × 10, then three-quarters × 5</div>`;
+}
+
 /* ---------------- Engine (same model as the spreadsheet) ---------------- */
 // Weight-dependent 1RM fitted to 303,494 real sets (arXiv 2603.17495); Epley under 3 kg
 const LBKG=2.2046;
@@ -346,7 +373,7 @@ function dayState(day){
   return {saw,dw,rows,next,done,total:rows.length,complete:saw>0&&pend.length===0};
 }
 function target(row,prev,saw){
-  const {ex,s,L,status}=row, i=incOf(ex), C=ex.min, D=ex.max, drop=ex.drop;
+  const {ex,s,L,status}=row, i=incOf(ex), C=ex.min, D=ex.max, drop=dropOf(ex);
   let W0=null,R0=null,Pf0=null,Pf1=null,Pf2=null,BW=null,BR=null,BWHY="",bwt=true,KUP=0;
   if(L>0){
     const x=getSet(ex.id,L,s); W0=x.w>0?x.w:0; R0=x.r; Pf0=perf(x);
@@ -461,12 +488,13 @@ function render(){
   else if(r==="checkin")renderCheckin();
   else if(r==="nutrition")renderNutrition();
   else if(r==="plan")renderPlan();
+  else if(r==="settings")renderSettings();
   else renderHome();
 }
 function storeNote(){
   if(MODE==="local"){const has=Object.keys(S.ex).length>0, lb=lastBackup();
     const first=Math.min(...Object.values(S.ex).flatMap(e=>Object.values(e.weeks||{}).flat()).filter(x=>x&&x.t).map(x=>x.t),Date.now());
-    if(has&&Date.now()-first>7*864e5&&Date.now()-lb>7*864e5)return `<div class="notice">Your log lives only on this phone. ${lb?"It's been over a week since your last backup.":"You haven't backed it up yet."} <a href="#plan">Back up now</a></div>`;
+    if(has&&Date.now()-first>7*864e5&&Date.now()-lb>7*864e5)return `<div class="notice">Your log lives only on this phone. ${lb?"It's been over a week since your last backup.":"You haven't backed it up yet."} <a href="#settings">Back up now</a></div>`;
     return "";}
   if(STALE)return `<div class="notice">Your saved log can't be reached right now, so what you see may be out of date.</div>`;
   return "";
@@ -486,7 +514,7 @@ function renderHome(){
       <div class="dn">${dd.num}<small>${esc(dd.dow.toUpperCase())}</small></div>
       <div style="min-width:0"><div class="t">${esc(dd.name)}</div><div class="small muted">Week ${s.dw} · ${s.done}/${s.total} sets${s.complete?" · last week done":""}</div><div class="bar"><i style="width:${pct}%"></i></div></div>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></a>`}).join("");
-  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Train</h1></div></div>
+  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Train</h1></div><a class="iconbtn" href="#settings" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a></div>
    <div class="stack">${storeNote()}${hero}
    <div class="label">Sessions · Thu and Sun off</div><div class="daylist">${list}</div></div>`;
 }
@@ -499,7 +527,7 @@ function renderDay(day){
   const byEx=[];st.rows.forEach(r=>{let g=byEx.find(x=>x.ex===r.ex);if(!g){g={ex:r.ex,rows:[]};byEx.push(g)}g.rows.push(r)});
   const cards=byEx.map(g=>exCard(g,st)).join("");
   app.innerHTML=`<div class="top"><a class="iconbtn" href="#train" aria-label="Back to sessions"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></a>
-     <div class="grow"><div class="sub">Day ${day.num} · ${esc(day.dow)}</div><h1>${esc(day.name)}</h1></div><span class="chip accent">Week ${st.dw}</span></div>
+     <div class="grow"><div class="sub">Day ${day.num} · ${esc(day.dow)}</div><h1>${esc(day.name)}</h1></div><span class="chip accent">Week ${st.dw}</span><a class="iconbtn" href="#settings" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a></div>
    <div class="stack">${storeNote()}${banner}${cards}
    <p class="note">A1 + A2 etc. are supersets: do 1, go straight to 2, rest ~90 s. Each pair uses one station: same machine, same cable tower or same bench. LP = 3–6 half reps in the stretch after failure.</p></div>`;
   bindDay(day,st);
@@ -520,7 +548,7 @@ function exCard(g,st){
   return `<section class="ex" id="ex-${ex.id}"><div class="ex-h">
      <div class="nm">${isSS(ex)?`<span class="ss">${ex.ss}</span>`:""}<span class="grow">${esc(ex.name)}</span><button class="linkbtn" data-act="hist" data-ex="${ex.id}">${histOpen?"Hide":"History"}</button></div>
      <div class="meta">${ex.min}–${ex.max} reps · ${esc(ex.effort)} · <button class="linkbtn plain" data-act="inc" data-ex="${ex.id}" aria-label="Change weight step">${i>0?"+"+fmtW(i)+" lb steps":"bodyweight"}</button>${ex.note?` · ${esc(ex.note)}`:""}${trend&&trend.c==="bad"?` · <b class="bad">${esc(trend.t)}${downTwice?", do 1 fewer set":""}</b>`:""}</div></div>
-     ${incEd}${hist}<div class="sets">${rows}</div></section>`;
+     ${warmText(ex,r0)}${incEd}${hist}<div class="sets">${rows}</div></section>`;
 }
 function setRow(r,st){
   const key=r.ex.id+":"+r.s; const isNext=st.next===r; const editing=UI.editing===key||(UI.editing==null&&isNext);
@@ -529,7 +557,7 @@ function setRow(r,st){
     return `<button class="set done" data-act="edit" data-key="${key}" aria-label="Change set ${r.s+1}"><span class="sn">${r.s+1}</span><span><span class="tg">✓ ${esc(fmtT(r.logged.w,r.logged.r))}</span></span><span class="last">${r.status==="D"&&r.L===st.dw?"":lastTxt}</span></button>`;
   }
   const t=fmtT(r.tw,r.tr,r.ex.min,r.ex.max);
-  const head=`<button class="set ${isNext?"isnext":""}" data-act="edit" data-key="${key}" aria-expanded="${editing}"><span class="sn">${r.s+1}</span><span style="min-width:0"><span class="tg ${r.tw==null&&r.tr==null?"dim":""}">${esc(t)}</span>${(isNext||editing)&&r.why?`<span class="why ${r.tone}">${esc(r.why)}</span>`:""}</span><span class="last">${lastTxt}</span></button>`;
+  const head=`<button class="set ${isNext?"isnext":""}" data-act="edit" data-key="${key}" aria-expanded="${editing}"><span class="sn">${r.s+1}</span><span style="min-width:0"><span class="tg ${r.tw==null&&r.tr==null?"dim":""}">${esc(t)}</span>${(isNext||editing)&&r.why&&opt("coach")?`<span class="why ${r.tone}">${esc(r.why)}</span>`:""}</span><span class="last">${lastTxt}</span></button>`;
   if(!editing)return head;
   const w0=r.logged?r.logged.w:(r.tw!=null?r.tw:(r.last?r.last.w:""));
   const reps0=r.logged?r.logged.r:(r.tr!=null?r.tr:"");
@@ -569,8 +597,8 @@ function bindDay(day,st){
     const k=st.dw; S.ex[id]=S.ex[id]||{weeks:{}}; const wk=S.ex[id].weeks[k]=(S.ex[id].weeks[k]||[]).slice();
     while(wk.length<ex.sets)wk.push(null);
     const wasLogged=!!wk[+s]; wk[+s]={w:isNaN(w)?0:w,r,t:Date.now()}; S.ex[id].weeks[k]=wk;
-    UI.editing=null; save("ex-"+id); UI.scrollNext=!wasLogged; render();
-    if(!wasLogged)startRest(ex,day);
+    UI.editing=null; save("ex-"+id); UI.scrollNext=!wasLogged&&opt("autoScroll"); render();
+    if(!wasLogged&&opt("autoRest"))startRest(ex,day);
   }));
 }
 /* rest timer */
@@ -601,7 +629,7 @@ async function enablePush(){
   }catch(e){toast("Couldn't reach the server. Check the link and that you're online.")}
 }
 function pushCard(){const on=pushOn();
-  return `<div class="card"><h3>Lock-screen rest alerts</h3><p class="small muted">${on?"On: you'll get a notification when rest is over, even with the phone locked. Needs internet at the gym.":standalone()?"Get a notification when rest is over, even with your phone locked.":"Open Shred Coach from its Home Screen icon to turn this on."}</p>
+  return `<div class="card scard"><h3>Lock-screen rest alerts</h3><p class="small muted">${on?"On: you'll get a notification when rest is over, even with the phone locked. Needs internet at the gym.":standalone()?"Get a notification when rest is over, even with your phone locked.":"Open Shred Coach from its Home Screen icon to turn this on."}</p>
     ${PUSH_DEFAULT?"":`<label class="small" style="display:block;margin:6px 0">Server link<input id="purl" type="url" placeholder="https://shred-coach.yourname.workers.dev" value="${esc(S.settings.pushUrl||"")}" style="width:100%;margin-top:4px;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:14px;background:var(--surface);color:var(--ink)"></label>`}
     <div class="row-actions">${on?`<button class="btn ghost small" id="ptest">Send test</button><button class="btn ghost small" id="poff">Turn off</button>`:`<button class="btn small" id="pon">Turn on</button>`}</div></div>`}
 function bindPush(){const g=id=>document.getElementById(id);
@@ -618,10 +646,11 @@ function audio(){try{
   if(!AC){const C=window.AudioContext||window.webkitAudioContext; if(!C)return null; AC=new C();}
   if(AC.state==="suspended")AC.resume(); return AC;}catch(e){return null}}
 function cancelBeep(){beepNodes.forEach(n=>{try{n.stop()}catch(e){}});beepNodes=[]}
-function scheduleBeep(secs){cancelBeep(); if(S.settings.sound===false)return; const ac=audio(); if(!ac)return;
-  const t0=ac.currentTime+secs;
+function scheduleBeep(secs){cancelBeep(); if(!opt("sound"))return; const ac=audio(); if(!ac)return;
+  const t0=ac.currentTime+secs, vol={low:0.2,normal:0.6,high:1}[opt("vol")]||0.6;
+  if(opt("warn10")&&secs>12){const o=ac.createOscillator(),g=ac.createGain(),t=t0-10;o.frequency.value=660;g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(vol*0.5,t+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+0.15);o.connect(g).connect(ac.destination);o.start(t);o.stop(t+0.17);beepNodes.push(o)}
   [0,0.22,0.44].forEach((d,k)=>{const o=ac.createOscillator(),g=ac.createGain();o.type="sine";o.frequency.value=k===2?1320:880;
-    g.gain.setValueAtTime(0.0001,t0+d);g.gain.exponentialRampToValueAtTime(0.6,t0+d+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t0+d+0.18);
+    g.gain.setValueAtTime(0.0001,t0+d);g.gain.exponentialRampToValueAtTime(vol,t0+d+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t0+d+0.18);
     o.connect(g).connect(ac.destination);o.start(t0+d);o.stop(t0+d+0.2);beepNodes.push(o)});}
 function startRest(ex,day){
   const st=dayState(day); const nx=st.next; const restEl=document.getElementById("rest");
@@ -632,7 +661,7 @@ function startRest(ex,day){
   const tgt=nx?fmtT(nx.tw,nx.tr,nx.ex.min,nx.ex.max)+(nx.mode==="fix"?" · "+(nx.tw<(getSet(nx.ex.id,st.dw,nx.s-1)||{}).w?"lighter":"heavier"):""):"";
   clearInterval(restT); restEnd=Date.now()+secs*1000;
   const tick=()=>{const left=Math.max(0,Math.round((restEnd-Date.now())/1000));
-    const snd=S.settings.sound!==false;
+    const snd=!!opt("sound");
     restEl.innerHTML=`<div class="clock">${secs?Math.floor(left/60)+":"+String(left%60).padStart(2,"0"):"✓"}</div><div class="info"><b>${esc(head)}</b>${esc(tgt)}</div>${secs?`<button type="button" id="rests" aria-label="${snd?"Turn alert sound off":"Turn alert sound on"}">${snd?"🔔":"🔕"}</button>`:""}<button type="button" id="restx">${left>0?"Skip":"Close"}</button>`;
     document.getElementById("restx").onclick=()=>{clearInterval(restT);cancelBeep();if(left>0)cancelPush();restEl.hidden=true;restEl.classList.remove("over")};
     const sb=document.getElementById("rests"); if(sb)sb.onclick=()=>{S.settings.sound=!snd;save("settings");if(S.settings.sound)scheduleBeep(Math.max(0,(restEnd-Date.now())/1000));else cancelBeep();tick()};
@@ -641,7 +670,7 @@ function startRest(ex,day){
 }
 function renderNutrition(){
   const st=S.settings,n=nutrition();
-  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Nutrition</h1></div></div>
+  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Nutrition</h1></div><a class="iconbtn" href="#settings" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a></div>
   <div class="stack">${storeNote()}
    ${st.example?`<div class="notice">These are example numbers (190 lb, 15% body fat). Replace them with yours.</div>`:""}
    <div class="kpis">
@@ -675,7 +704,7 @@ function renderNutrition(){
 function renderCheckin(){
   const c=checkinRows(); const today=new Date().toISOString().slice(0,10);
   const rows=c.rows.slice().reverse().map(x=>`<tr><td>${x.i+1}</td><td>${esc(x.e.date||"")}</td><td>${x.e.weight>0?x.e.weight.toFixed(1):"–"}</td><td>${x.lost!=null?x.lost.toFixed(1):"–"}</td><td>${x.pct!=null?(x.pct*100).toFixed(2)+"%":"–"}</td><td>${x.cal.toLocaleString()}</td><td class="wrap">${x.tone?`<span class="status ${x.tone}">${esc(x.act)}</span>`:esc(x.act)}</td></tr>`).join("");
-  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Weekly check-in</h1></div></div>
+  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Weekly check-in</h1></div><a class="iconbtn" href="#settings" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a></div>
   <div class="stack">${storeNote()}
    <div class="kpis"><div class="kpi key"><span class="label">Eat this week</span><b>${c.nextCal.toLocaleString()} kcal</b><span class="note">per day</span></div>
      <div class="kpi"><span class="label">Target loss</span><b>${(c.n.rate*100).toFixed(2)}%</b><span class="note">${c.n.lossLb} lb a week</span></div></div>
@@ -699,7 +728,7 @@ function renderCheckin(){
 }
 function renderPlan(){
   const src=(t,u)=>`<a href="${u}" target="_blank" rel="noopener">${esc(t)}</a>`;
-  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>The plan</h1></div></div>
+  app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>The plan</h1></div><a class="iconbtn" href="#settings" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a></div>
   <div class="stack prose">
    <div class="card"><h3>Week</h3><ul><li>Mon: Day 1 Chest &amp; Back</li><li>Tue: Day 2 Shoulders &amp; Arms</li><li>Wed: Day 3 Legs</li><li>Thu: rest, 25–30 min cycling or incline walk</li><li>Fri: Day 4 Chest &amp; Back</li><li>Sat: Day 5 Shoulders &amp; Arms, then 20–30 min cycling</li><li>Sun: rest, long walk</li></ul></div>
    <div class="card"><h3>How the app coaches you</h3><dl>
@@ -722,28 +751,71 @@ function renderPlan(){
     <dt>Deloads</dt><dd>None scheduled: a planned week off didn't add growth and slightly cost strength. Take an easy week (half the sets) only if joints ache or you're weaker 2 weeks running.<span class="src">${src("Coleman 2024","https://peerj.com/articles/16777")}</span></dd>
     <dt>Supplements</dt><dd>Creatine 3–5 g a day; caffeine before training if you like it.</dd>
    </dl></div>
-   ${pushCard()}
-   <div class="card"><h3>Your data</h3><p class="small muted">Your log is saved only on this phone and works with no internet. Back it up every week or so, and keep the app on your Home Screen so iPhone doesn't clear it.${lastBackup()?" Last backup: "+new Date(lastBackup()).toLocaleDateString()+".":""}</p>
+  </div>`;
+}
+function dataCard(){return `   <div class="card scard"><h3>Backup</h3><p class="small muted">Your log is saved only on this phone and works with no internet. Back it up every week or so, and keep the app on your Home Screen so iPhone doesn't clear it.${lastBackup()?" Last backup: "+new Date(lastBackup()).toLocaleDateString()+".":""}</p>
     <div class="row-actions"><button class="btn small" id="dsave">Save backup file</button><button class="btn ghost small" id="dcopy">Copy my data</button></div>
     <textarea id="dbox" readonly hidden rows="5" style="width:100%;margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:12px;background:var(--surface-2);color:var(--ink)"></textarea>
     <h3 style="margin-top:14px">Restore</h3><p class="small muted">Paste data copied from the claude.ai app or a backup, or pick a backup file.</p>
     <textarea id="dpaste" rows="4" placeholder="Paste here" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:13px;background:var(--surface);color:var(--ink)"></textarea>
     <div class="row-actions"><button class="btn small" id="drestore">Restore</button><label class="btn ghost small" style="cursor:pointer">Choose file<input id="dfile" type="file" accept=".json,application/json,text/plain" hidden></label></div></div>
-  </div>`;
+`}
+function bindData(){
   document.getElementById("dcopy").addEventListener("click",copyData);
-  bindPush();
   document.getElementById("dsave").addEventListener("click",saveFile);
   document.getElementById("drestore").addEventListener("click",()=>restoreText(document.getElementById("dpaste").value));
   document.getElementById("dfile").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];if(!f)return;f.text().then(restoreText);e.target.value=""});
 }
+
+function renderSettings(){
+  const secs=s=>s>=60?(s%60?Math.floor(s/60)+":"+String(s%60).padStart(2,"0"):s/60+" min"):s+" s";
+  app.innerHTML=`<div class="top"><a class="iconbtn" href="#train" onclick="if(history.length>1){history.back();return false}" aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></a><div class="grow"><div class="sub">Shred Coach</div><h1>Settings</h1></div></div>
+  <div class="stack">
+   <div class="card scard"><h3>Rest timer</h3>
+    ${tog("autoRest","Start timer automatically","Starts when you log a set")}
+    ${pick("Rest on straight sets","Longer rest = more reps next set; targets adjust",seg("restIso",[60,75,90,120,150].map(v=>[v,secs(v)])))}
+    ${pick("Rest on hack squat and RDL","",seg("restLeg",[120,150,180,210].map(v=>[v,secs(v)])))}
+    ${pick("Between superset exercises","",seg("ssGap",[0,15,30].map(v=>[v,v?v+" s":"None"])))}
+    ${tog("sound","Alert sound","Beeps when rest is over, even with the silent switch on")}
+    ${opt("sound")?pick("Volume","",seg("vol",[["low","Low"],["normal","Normal"],["high","High"]])):""}
+    ${tog("warn10","10-second warning","One soft beep before rest ends")}
+   </div>
+   ${typeof pushCard==="function"?pushCard():""}
+   <div class="card scard"><h3>Workout</h3>
+    ${tog("supersets","Supersets","Off = do every exercise as straight sets")}
+    ${pick("Warm-up suggestions","Based on today's target weight",seg("warmup",[["off","Off"],["compound","Main lifts"],["all","Every exercise"]]))}
+    ${tog("coach","Coaching notes","The why under your next set, e.g. “Only 6 reps: drop to 80 lb”")}
+    ${tog("autoScroll","Jump to next set","Scrolls to your next set after you log one")}
+    ${tog("keepAwake","Keep screen on","During workouts, so you don't unlock it every set")}
+    <p class="small muted" style="margin:8px 0 0">Weight jumps: tap the "+5 lb steps" link on any exercise to match your gym's machines.</p>
+   </div>
+   <div class="card scard"><h3>Appearance</h3>${pick("Theme","",seg("theme",[["system","Auto"],["light","Light"],["dark","Dark"]]))}</div>
+   ${typeof dataCard==="function"?dataCard():""}
+   <div class="card scard"><h3>Reset</h3><p class="small muted">Deletes every logged set, check-in and setting on this phone. Save a backup first.</p><div class="row-actions"><button class="btn danger small" id="sreset">Erase everything</button></div></div>
+  </div>`;
+  app.querySelectorAll("[data-set]").forEach(el=>{
+    const k=el.dataset.set;
+    if(el.type==="checkbox")el.addEventListener("change",()=>{S.settings[k]=el.checked;afterSet(k)});
+    else el.addEventListener("click",()=>{const v=el.dataset.val;S.settings[k]=v.startsWith("n:")?+v.slice(2):v;afterSet(k)});
+  });
+  if(typeof bindData==="function")bindData();
+  if(typeof bindPush==="function")bindPush();
+  document.getElementById("sreset").addEventListener("click",()=>{
+    if(!confirm("Erase every logged set, check-in and setting on this phone? This can't be undone."))return;
+    S={settings:Object.assign({},DEF_SETTINGS,{example:false}),checkins:{weeks:[]},ex:{}}; ["settings","checkins"].forEach(save); Object.keys(EX).forEach(id=>save("ex-"+id));
+    try{localStorage.removeItem(LSKEY+"-backup")}catch(e){} applyTheme(); toast("Everything erased."); location.hash="#train";
+  });
+}
+function afterSet(k){save("settings");if(k==="theme")applyTheme();if(k==="keepAwake"){if(opt("keepAwake"))wake();else if(wl){wl.release();wl=null}}
+  if(k==="sound"&&!opt("sound"))cancelBeep(); const y=window.scrollY; render(); window.scrollTo(0,y)}
 let toastT=null;
 function toast(msg){let t=document.querySelector(".toast");if(!t){t=document.createElement("div");t.className="toast";t.setAttribute("role","status");document.body.appendChild(t)}t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},3200)}
-window.addEventListener("hashchange",()=>{UI.editing=null;UI.incEdit=null;window.scrollTo(0,0);UI.scrollNext=/^day/.test(route());render()});
+window.addEventListener("hashchange",()=>{UI.editing=null;UI.incEdit=null;window.scrollTo(0,0);UI.scrollNext=/^day/.test(route())&&opt("autoScroll");render()});
 // keep the screen awake during a workout when allowed
-let wl=null;async function wake(){try{if(navigator.wakeLock&&!wl){wl=await navigator.wakeLock.request("screen");wl.addEventListener("release",()=>{wl=null})}}catch(e){}}
+let wl=null;async function wake(){try{if(opt("keepAwake")&&navigator.wakeLock&&!wl){wl=await navigator.wakeLock.request("screen");wl.addEventListener("release",()=>{wl=null})}}catch(e){}}
 document.addEventListener("click",wake,{once:true});document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&wl===null&&route().startsWith("day"))wake()});
 window.__engine={E1,RA,dayState,DAYS,setS:x=>{S=x},nutrition,checkinRows};
-initStore();
+initStore(); applyTheme();
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
 })();
 </script>

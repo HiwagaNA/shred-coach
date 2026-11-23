@@ -1,5 +1,5 @@
 // Shred Coach offline cache. Bump VERSION when you upload new files.
-const VERSION = "shred-coach-v7";
+const VERSION = "shred-coach-v8";
 const FILES = ["./", "index.html", "manifest.webmanifest", "apple-touch-icon.png", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
