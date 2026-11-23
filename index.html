@@ -143,6 +143,18 @@ form.inline{display:flex;gap:8px}form.inline input{flex:1;min-width:0;border:1px
 .srow .up{color:var(--good);font-weight:700}.srow .down{color:var(--bad);font-weight:700}
 .prline{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
 .focusline{display:block;padding:10px 14px}.focusline .label{margin-right:4px}
+.btn.endbtn{background:var(--bad);color:#fff}.btn.wide{width:100%}
+.sheet-bg{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;animation:fadein .15s}
+.sheet{background:var(--bg);width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));box-shadow:0 -6px 24px rgba(0,0,0,.2);animation:slideup .2s ease-out}
+.sheet h2{font-family:var(--f-display);font-size:26px;margin:4px 0 4px}.sheet .row-actions{margin-top:14px}.sheet .row-actions .btn{flex:1}
+@keyframes slideup{from{transform:translateY(30px);opacity:.4}}@keyframes fadein{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.sheet,.sheet-bg{animation:none}}
+body.noscroll{overflow:hidden}
+details.hist>summary{list-style:none;display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer}details.hist>summary::-webkit-details-marker{display:none}
+details.hist summary b{display:block}details.hist summary .small{display:block}details.hist .hs{text-align:right;flex:none;max-width:45%}
+details.hist[open]>summary{margin-bottom:6px}
+.hrow{padding:8px 0;border-top:1px solid var(--line)}.hrow b{display:block;font-size:14px;margin-bottom:3px}.hrow span{display:flex;flex-wrap:wrap;gap:6px}
+.hrow i{font-style:normal;font-size:13px;background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:2px 7px;font-variant-numeric:tabular-nums}.hrow i.pr{background:var(--good-bg);border-color:transparent;color:var(--good);font-weight:700}
 .linkbtn.plain{color:inherit;font:inherit;text-decoration:underline dotted;text-underline-offset:2px}
 .ex-h .nm .grow{flex:1;min-width:0}
 .set .tg.dim{color:var(--muted);font-size:17px;font-weight:500}
@@ -319,7 +331,7 @@ function normalizeImport(o){
   const ex={}; Object.keys(o.ex).forEach(k=>{const w=o.ex[k]&&o.ex[k].weeks; if(w&&typeof w==="object")ex[k]={weeks:w}});
   const st=Object.assign({},DEF_SETTINGS,o.settings||{}); st.inc=Object.assign({},(o.settings&&o.settings.inc)||{});
   return {settings:st,checkins:{weeks:Array.isArray(o.checkins&&o.checkins.weeks)?o.checkins.weeks:[]},ex,
-    daily:(o.daily&&typeof o.daily==="object")?o.daily:{},meas:Array.isArray(o.meas)?o.meas:[],cal:(o.cal&&typeof o.cal==="object")?o.cal:null};
+    daily:(o.daily&&typeof o.daily==="object")?o.daily:{},sessions:(o.sessions&&typeof o.sessions==="object")?o.sessions:{},meas:Array.isArray(o.meas)?o.meas:[],cal:(o.cal&&typeof o.cal==="object")?o.cal:null};
 }
 function showBox(t){const b=document.getElementById("dbox");if(!b)return;b.hidden=false;b.value=t;b.focus();b.select();try{b.setSelectionRange(0,t.length)}catch(e){}}
 function copyData(){
@@ -374,6 +386,7 @@ const r10=v=>Math.round(v/10)*10;
 function ensure(){
   if(!S.daily||typeof S.daily!=="object")S.daily={};
   if(!Array.isArray(S.meas))S.meas=[];
+  if(!S.sessions||typeof S.sessions!=="object")S.sessions={};
   if(S.cal===undefined)S.cal=null;
   // carry old weekly check-ins over once
   if(!S.settings.migratedDaily){(S.checkins&&S.checkins.weeks||[]).forEach(e=>{if(e&&e.date&&e.weight>0&&!(S.daily[e.date]&&S.daily[e.date].w))S.daily[e.date]=Object.assign({},S.daily[e.date],{w:e.weight});if(e&&e.date&&e.waist>0)S.meas.push({date:e.date,waist:e.waist})});S.settings.migratedDaily=true}
@@ -605,6 +618,58 @@ function pStrength(el){
      return list?`<div class="card"><h3>Day ${d.num} · ${esc(d.name)}</h3>${list}</div>`:""}).join("")||`<div class="card small muted">Log some sets and your lifts show up here.</div>`}`;
 }
 
+
+/* ---------------- Workouts: end early, finish popup, history ---------------- */
+function sessionSets(day,week){const out=[];day.ex.forEach(e=>{const w=S.ex[e.id]&&S.ex[e.id].weeks&&S.ex[e.id].weeks[week];
+    (w||[]).forEach((x,i)=>{if(x&&typeof x.r==="number")out.push({ex:e,s:i,x})})});return out}
+function sessionStats(day,week){const sets=sessionSets(day,week);if(!sets.length)return null;const ts=sets.map(z=>z.x.t).filter(Boolean);
+  const start=ts.length?Math.min(...ts):0,meta=S.sessions&&S.sessions[day.id+":"+week]||{};const end=meta.end||(ts.length?Math.max(...ts):0);
+  const vol=sets.reduce((a,z)=>a+(z.x.w>0?z.x.w*z.x.r:0),0);const ids=new Set(sets.map(z=>z.ex.id));
+  const prs=prList().filter(p=>ids.has(p.id)&&p.x.t>=start&&p.x.t<=end+1);
+  let total=0;day.ex.forEach(e=>{total+=e.sets});
+  return {day,week,sets,start,end,mins:start&&end?Math.max(1,Math.round((end-start)/60000)+1):null,vol,prs,total,early:!!meta.early}}
+function allSessions(){const out=[];DAYS.forEach(d=>{const wks=new Set();Object.values(EX).filter(e=>e.day===d.id).forEach(e=>{Object.keys((S.ex[e.id]&&S.ex[e.id].weeks)||{}).forEach(k=>wks.add(+k))});
+  wks.forEach(w=>{const st=sessionStats(d,w);if(st&&st.sets.length)out.push(st)})});return out.sort((a,b)=>b.start-a.start)}
+function closeSheet(){const o=document.getElementById("sheet");if(o)o.remove();document.body.classList.remove("noscroll")}
+function sheet(html){closeSheet();const o=document.createElement("div");o.id="sheet";o.className="sheet-bg";
+  o.innerHTML=`<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;document.body.appendChild(o);document.body.classList.add("noscroll");
+  o.addEventListener("click",e=>{if(e.target===o)closeSheet()});return o}
+function statsHtml(x){return `<div class="kpis"><div class="kpi"><span class="label">Sets</span><b>${x.sets.length}</b><span class="note">of ${x.total}</span></div>
+  <div class="kpi"><span class="label">Time</span><b>${x.mins!=null?x.mins:"–"}</b><span class="note">min</span></div>
+  <div class="kpi"><span class="label">Volume</span><b>${x.vol>=10000?(x.vol/1000).toFixed(1)+"k":Math.round(x.vol).toLocaleString()}</b><span class="note">lb lifted</span></div>
+  <div class="kpi"><span class="label">PRs</span><b>${x.prs.length}</b><span class="note">${x.prs.length?"🏆":"this session"}</span></div></div>
+  ${x.prs.length?`<div class="small" style="margin-top:8px">${x.prs.map(p=>`🏆 ${esc(EX[p.id].name.split(" (")[0])}: ${esc(fmtT(p.x.w,p.x.r))}`).join("<br>")}</div>`:""}`}
+function endWorkout(day,week,early){S.sessions=Object.assign({},S.sessions,{[day.id+":"+week]:{end:Date.now(),early:!!early}});save("sessions");
+  try{clearInterval(restT);cancelBeep();cancelPush();const re=document.getElementById("rest");re.hidden=true;re.classList.remove("over")}catch(e){}
+  const x=sessionStats(day,week);
+  sheet(`<h2>Workout saved</h2><p class="small muted" style="margin:0 0 10px">Day ${day.num} · ${esc(day.name)} · week ${week}${early?" · ended early":""}</p>${x?statsHtml(x):""}
+   <p class="small muted" style="margin:10px 0 0">${early&&x&&x.sets.length<x.total?"Skipped sets keep their last targets next time.":"Next session's targets are ready."}</p>
+   <div class="row-actions"><button class="btn" id="sh-home">Done</button><button class="btn ghost" id="sh-hist">All workouts</button></div>`);
+  document.getElementById("sh-home").onclick=()=>{closeSheet();location.hash="#train"};
+  document.getElementById("sh-hist").onclick=()=>{closeSheet();location.hash="#history"};
+}
+function askEnd(day){const st=dayState(day);const left=st.total-st.done;
+  sheet(`<h2>End workout?</h2><p class="small" style="margin:0 0 12px">${st.done} of ${st.total} sets logged.${left?` The ${left} you skip keep their last targets next time.`:""}</p>
+   <div class="row-actions"><button class="btn endbtn" id="sh-end">End workout</button><button class="btn ghost" id="sh-no">Keep going</button></div>`);
+  document.getElementById("sh-end").onclick=()=>endWorkout(day,st.dw,true);document.getElementById("sh-no").onclick=closeSheet;
+}
+function finishedPopup(day,week){const x=sessionStats(day,week);
+  sheet(`<div style="font-size:34px;line-height:1">🎉</div><h2>Every set done</h2><p class="small muted" style="margin:0 0 10px">Day ${day.num} · ${esc(day.name)} · week ${week}</p>${x?statsHtml(x):""}
+   <div class="row-actions"><button class="btn endbtn" id="sh-end">End workout</button><button class="btn ghost" id="sh-no">Not yet</button></div>`);
+  document.getElementById("sh-end").onclick=()=>endWorkout(day,week,false);document.getElementById("sh-no").onclick=closeSheet;
+}
+function renderHistory(){
+  const all=allSessions();const fmtD=t=>new Date(t).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
+  app.innerHTML=`<div class="top"><a class="iconbtn" href="#train" onclick="if(history.length>1){history.back();return false}" aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></a><div class="grow"><div class="sub">Shred Coach</div><h1>All workouts</h1></div>${GEAR_HTML}</div>
+  <div class="stack">${all.length?`<div class="small muted">${all.length} workout${all.length===1?"":"s"} logged</div>`+all.map(x=>{
+    const byEx=[];x.sets.forEach(z=>{let g=byEx.find(q=>q.ex===z.ex);if(!g){g={ex:z.ex,sets:[]};byEx.push(g)}g.sets.push(z)});
+    return `<details class="card hist"><summary><div><b>Day ${x.day.num} · ${esc(x.day.name)}</b><span class="small muted">${x.start?fmtD(x.start):""} · week ${x.week}</span></div>
+      <span class="small muted hs">${x.sets.length} sets${x.mins!=null?" · "+x.mins+" min":""}${x.prs.length?" · 🏆"+x.prs.length:""}${x.early?" · ended early":""}</span></summary>
+      ${byEx.map(g=>`<div class="hrow"><b>${esc(g.ex.name.split(" (")[0])}</b><span>${g.sets.sort((a,b)=>a.s-b.s).map(z=>{const pr=x.prs.some(p=>p.x===z.x);return `<i class="${pr?"pr":""}">${esc(fmtT(z.x.w,z.x.r))}${pr?" 🏆":""}</i>`}).join("")}</span></div>`).join("")}
+      <div class="small muted" style="margin-top:8px">Volume ${Math.round(x.vol).toLocaleString()} lb</div></details>`}).join("")
+    :`<div class="card small muted">No workouts yet. Finish a session and it shows up here.</div>`}</div>`;
+}
+
 /* ---------------- Engine (same model as the spreadsheet) ---------------- */
 // Weight-dependent 1RM fitted to 303,494 real sets (arXiv 2603.17495); Epley under 3 kg
 const LBKG=2.2046;
@@ -630,7 +695,8 @@ function dayState(day){
   // A session stays open for 12 h after its last logged set. After that, the next visit is a new week,
   // and anything skipped last time simply gets its target from the last time it was done.
   let lastT=0; if(saw)day.ex.forEach(ex=>{((S.ex[ex.id]&&S.ex[ex.id].weeks&&S.ex[ex.id].weeks[saw])||[]).forEach(x=>{if(x&&x.t>lastT)lastT=x.t})});
-  const expired=saw>0&&lastT>0&&Date.now()-lastT>12*3600e3;
+  const ended=!!(saw&&S.sessions&&S.sessions[day.id+":"+saw]&&S.sessions[day.id+":"+saw].end);
+  const expired=saw>0&&(ended||(lastT>0&&Date.now()-lastT>12*3600e3));
   day.ex.forEach(ex=>{for(let s=0;s<ex.sets;s++){
     const L=lw(ex.id,s); const status=L===0?((saw===0||expired)?"N":"P"):((L<saw&&!expired)?"P":"D");
     const KB=kb(ex.id,s,saw); const PA=saw?perf(getSet(ex.id,saw,s)):null; const PB=KB?perf(getSet(ex.id,KB,s)):null;
@@ -765,6 +831,7 @@ function render(){
   else if(r==="nutrition")renderNutrition();
   else if(r==="plan")renderPlan();
   else if(r==="settings")renderSettings();
+  else if(r==="history")renderHistory();
   else renderHome();
 }
 function storeNote(){
@@ -794,10 +861,11 @@ function renderHome(){
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></a>`}).join("");
   app.innerHTML=`<div class="top"><div class="grow"><div class="sub">Shred Coach</div><h1>Train</h1></div><a class="iconbtn" href="#settings" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a></div>
    <div class="stack">${storeNote()}${hero}${focusLine()}${todayNudge()}
-   <div class="label">Sessions · Thu and Sun off</div><div class="daylist">${list}</div></div>`;
+   <div class="label">Sessions · Thu and Sun off</div><div class="daylist">${list}</div>
+   <a class="card focusline" href="#history" style="text-decoration:none;color:inherit;display:flex;justify-content:space-between;align-items:center"><span><b>All workouts</b> <span class="small muted">· ${allSessions().length} logged</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></a></div>`;
 }
 function renderDay(day){
-  const st=dayState(day); const nx=st.next;
+  const st=dayState(day); const nx=st.next; const inprog=st.saw>0&&!st.expired&&!st.complete&&st.done>0;
   let banner;
   if(st.saw===0)banner=`<p class="note">First session: pick weights you can lift for the rep range, 1–2 reps short of failure. The app sets every target after that.</p>`;
   else if(!nx)banner=`<div class="notice good">Week ${st.saw} done. Next session's targets are set below.</div>`;
@@ -806,9 +874,11 @@ function renderDay(day){
   const cards=byEx.map(g=>exCard(g,st)).join("");
   app.innerHTML=`<div class="top"><a class="iconbtn" href="#train" aria-label="Back to sessions"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></a>
      <div class="grow"><div class="sub">Day ${day.num} · ${esc(day.dow)}</div><h1>${esc(day.name)}</h1></div><span class="chip accent">Week ${st.dw}</span><a class="iconbtn" href="#settings" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a></div>
-   <div class="stack">${storeNote()}${banner}${cards}
+   <div class="stack">${storeNote()}${inprog?`<button class="btn endbtn wide" id="endw" type="button">End workout · ${st.done}/${st.total} sets</button>`:""}${banner}${cards}
+   ${inprog?`<button class="btn endbtn wide" id="endw2" type="button">End workout</button>`:""}
    <p class="note">A1 + A2 etc. are supersets: do 1, go straight to 2, rest ~90 s. Each pair uses one station: same machine, same cable tower or same bench. LP = 3–6 half reps in the stretch after failure.</p></div>`;
   bindDay(day,st);
+  ["endw","endw2"].forEach(id=>{const b=document.getElementById(id);if(b)b.addEventListener("click",()=>askEnd(day))});
   if(UI.scrollNext){UI.scrollNext=false;const el=app.querySelector(".set.isnext");if(el)setTimeout(()=>el.scrollIntoView({block:"center",behavior:"smooth"}),50);}
 }
 function exCard(g,st){
@@ -877,7 +947,9 @@ function bindDay(day,st){
     const prevBest=bestExcept(id,k,+s); const wasLogged=!!wk[+s]; wk[+s]={w:isNaN(w)?0:w,r,t:Date.now()}; S.ex[id].weeks[k]=wk;
     const isPR=prevBest>0&&perf(wk[+s])>prevBest*1.0001;
     UI.editing=null; save("ex-"+id); UI.scrollNext=!wasLogged&&opt("autoScroll"); render();
-    if(!wasLogged&&opt("autoRest"))startRest(ex,day);
+    const fin=!wasLogged&&dayState(day).complete;
+    if(fin){setTimeout(()=>finishedPopup(day,k),300)}
+    else if(!wasLogged&&opt("autoRest"))startRest(ex,day);
     if(isPR)setTimeout(()=>toast("🏆 New PR on "+ex.name.split(" (")[0]+": "+fmtT(wk[+s].w,wk[+s].r)),250);
   }));
 }
@@ -1092,7 +1164,7 @@ function afterSet(k){save("settings");if(k==="theme")applyTheme();if(k==="keepAw
   if(k==="sound"&&!opt("sound"))cancelBeep(); const y=window.scrollY; render(); window.scrollTo(0,y)}
 let toastT=null;
 function toast(msg){let t=document.querySelector(".toast");if(!t){t=document.createElement("div");t.className="toast";t.setAttribute("role","status");document.body.appendChild(t)}t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},3200)}
-window.addEventListener("hashchange",()=>{UI.editing=null;UI.incEdit=null;window.scrollTo(0,0);UI.scrollNext=/^day/.test(route())&&opt("autoScroll");render()});
+window.addEventListener("hashchange",()=>{closeSheet();UI.editing=null;UI.incEdit=null;window.scrollTo(0,0);UI.scrollNext=/^day/.test(route())&&opt("autoScroll");render()});
 // keep the screen awake during a workout when allowed
 let wl=null;async function wake(){try{if(opt("keepAwake")&&navigator.wakeLock&&!wl){wl=await navigator.wakeLock.request("screen");wl.addEventListener("release",()=>{wl=null})}}catch(e){}}
 document.addEventListener("click",wake,{once:true});document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&wl===null&&route().startsWith("day"))wake()});
