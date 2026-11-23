@@ -1,19 +1,28 @@
 // Shred Coach offline cache. Bump VERSION when you upload new files.
-const VERSION = "shred-coach-v8";
+const VERSION = "shred-coach-v9";
 const FILES = ["./", "index.html", "manifest.webmanifest", "apple-touch-icon.png", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  // cache:"reload" skips the browser's own 10-minute HTTP cache, so an update is never stuck on an old copy
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES.map(u => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
-// Serve from the phone first (instant, works offline), then refresh the copy in the background when online.
+// Pages: try the network first (fresh app when online), fall back to the saved copy after 2.5 s or when offline.
+// Other files: serve the saved copy instantly and refresh it in the background.
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
+  const isPage = req.mode === "navigate" || /\/(index\.html)?$/.test(new URL(req.url).pathname);
   e.respondWith(caches.open(VERSION).then(async c => {
-    const hit = await c.match(req, { ignoreSearch: true }) || (req.mode === "navigate" ? await c.match("index.html") : null);
-    const net = fetch(req).then(r => { if (r && r.ok) c.put(req, r.clone()); return r; }).catch(() => null);
+    const net = fetch(req, { cache: "no-cache" }).then(r => { if (r && r.ok) c.put(isPage ? "index.html" : req, r.clone()); return r; }).catch(() => null);
+    const hit = isPage ? await c.match("index.html") : await c.match(req, { ignoreSearch: true });
+    if (isPage) {
+      const r = await Promise.race([net, new Promise(res => setTimeout(() => res(null), 2500))]);
+      if (r && r.ok) return r;
+      if (hit) { e.waitUntil(net); return hit; }
+      return (await net) || new Response("Offline", { status: 503 });
+    }
     if (hit) { e.waitUntil(net); return hit; }
     return (await net) || new Response("Offline", { status: 503 });
   }));

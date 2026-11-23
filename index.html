@@ -816,7 +816,15 @@ let wl=null;async function wake(){try{if(opt("keepAwake")&&navigator.wakeLock&&!
 document.addEventListener("click",wake,{once:true});document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&wl===null&&route().startsWith("day"))wake()});
 window.__engine={E1,RA,dayState,DAYS,setS:x=>{S=x},nutrition,checkinRows};
 initStore(); applyTheme();
-if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+if("serviceWorker" in navigator){
+  // check for a new version every time the app is opened or brought back, and switch to it right away
+  const hadSW=!!navigator.serviceWorker.controller; let reloaded=false;
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{if(hadSW&&!reloaded){reloaded=true;location.reload()}});
+  window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(reg=>{
+    reg.update().catch(()=>{});
+    document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")reg.update().catch(()=>{})});
+  }).catch(()=>{}));
+}
 })();
 </script>
 </body>
