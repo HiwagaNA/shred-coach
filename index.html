@@ -627,21 +627,25 @@ function fmtT(w,r,min,max){ if(r==null)return min+"–"+max+" reps"; if(!(w>0))r
 function dayState(day){
   let saw=0; const rows=[];
   day.ex.forEach(ex=>{for(let s=0;s<ex.sets;s++){saw=Math.max(saw,lw(ex.id,s))}});
+  // A session stays open for 12 h after its last logged set. After that, the next visit is a new week,
+  // and anything skipped last time simply gets its target from the last time it was done.
+  let lastT=0; if(saw)day.ex.forEach(ex=>{((S.ex[ex.id]&&S.ex[ex.id].weeks&&S.ex[ex.id].weeks[saw])||[]).forEach(x=>{if(x&&x.t>lastT)lastT=x.t})});
+  const expired=saw>0&&lastT>0&&Date.now()-lastT>12*3600e3;
   day.ex.forEach(ex=>{for(let s=0;s<ex.sets;s++){
-    const L=lw(ex.id,s); const status=L===0?(saw===0?"N":"P"):(L<saw?"P":"D");
+    const L=lw(ex.id,s); const status=L===0?((saw===0||expired)?"N":"P"):((L<saw&&!expired)?"P":"D");
     const KB=kb(ex.id,s,saw); const PA=saw?perf(getSet(ex.id,saw,s)):null; const PB=KB?perf(getSet(ex.id,KB,s)):null;
     rows.push({ex,s,L,status,Q:(PA!=null&&PB!=null)?PA/PB:null});
   }});
   const pend=rows.filter(r=>r.status==="P");
-  const dw=saw===0?1:(pend.length?saw:saw+1);
+  const dw=saw===0?1:(pend.length?saw:saw+1);  // pend is empty once expired
   rows.forEach((row,i)=>Object.assign(row,target(row,i>0&&rows[i-1].ex===row.ex?rows[i-1]:null,saw)));
   rows.forEach(r=>{r.logged=getSet(r.ex.id,dw,r.s); r.last=r.L?getSet(r.ex.id,r.L,r.s):null;});
   // order sets the way you actually do them: supersets alternate A1 s1, A2 s1, A1 s2...
   const gi=r=>{const ss=r.ex.ss;if(isSS(r.ex)&&ss[1]==="2"){const p=day.ex.findIndex(e=>e.ss===ss[0]+"1");if(p>=0)return [p,1]}return [day.ex.indexOf(r.ex),0]};
   const order=rows.slice().sort((a,b)=>{const A=gi(a),B=gi(b);return A[0]-B[0]||a.s-b.s||A[1]-B[1]});
-  const next=order.find(r=>r.status==="P"&&!r.logged)||(saw===0?order.find(r=>!r.logged):null)||null;
+  const next=order.find(r=>r.status==="P"&&!r.logged)||((saw===0||expired)?order.find(r=>!r.logged):null)||null;
   const done=rows.filter(r=>r.logged).length;
-  return {saw,dw,rows,next,done,total:rows.length,complete:saw>0&&pend.length===0};
+  return {saw,dw,rows,next,done,total:rows.length,complete:saw>0&&pend.length===0&&!expired,expired};
 }
 function target(row,prev,saw){
   const {ex,s,L,status}=row, i=incOf(ex), C=ex.min, D=ex.max, drop=dropOf(ex);
