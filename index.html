@@ -162,6 +162,7 @@ input[type=date]{display:block;min-width:0;max-width:100%;text-align:left}input[
 .mrow.mdate{grid-template-columns:1fr 160px}.mrow b{display:block;font-size:15px}.mrow small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.35}
 .mrow input{width:100%;height:44px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:16px;background:var(--surface);color:var(--ink);-webkit-appearance:none;appearance:none;margin:0;min-width:0;box-sizing:border-box}
 .mrow .unit{position:relative;display:block}.mrow .unit input{padding-right:30px;text-align:right}.mrow .unit em{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-style:normal;color:var(--muted);font-size:13px;pointer-events:none}
+.skiprow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;opacity:.75}
 .linkbtn.plain{color:inherit;font:inherit;text-decoration:underline dotted;text-underline-offset:2px}
 .ex-h .nm .grow{flex:1;min-width:0}
 .set .tg.dim{color:var(--muted);font-size:17px;font-weight:500}
@@ -338,7 +339,7 @@ function normalizeImport(o){
   const ex={}; Object.keys(o.ex).forEach(k=>{const w=o.ex[k]&&o.ex[k].weeks; if(w&&typeof w==="object")ex[k]={weeks:w}});
   const st=Object.assign({},DEF_SETTINGS,o.settings||{}); st.inc=Object.assign({},(o.settings&&o.settings.inc)||{});
   return {settings:st,checkins:{weeks:Array.isArray(o.checkins&&o.checkins.weeks)?o.checkins.weeks:[]},ex,
-    daily:(o.daily&&typeof o.daily==="object")?o.daily:{},sessions:(o.sessions&&typeof o.sessions==="object")?o.sessions:{},meas:Array.isArray(o.meas)?o.meas:[],cal:(o.cal&&typeof o.cal==="object")?o.cal:null};
+    daily:(o.daily&&typeof o.daily==="object")?o.daily:{},sessions:(o.sessions&&typeof o.sessions==="object")?o.sessions:{},skips:Array.isArray(o.skips)?o.skips:[],restDay:typeof o.restDay==="string"?o.restDay:null,meas:Array.isArray(o.meas)?o.meas:[],cal:(o.cal&&typeof o.cal==="object")?o.cal:null};
 }
 function showBox(t){const b=document.getElementById("dbox");if(!b)return;b.hidden=false;b.value=t;b.focus();b.select();try{b.setSelectionRange(0,t.length)}catch(e){}}
 function copyData(){
@@ -394,6 +395,7 @@ function ensure(){
   if(!S.daily||typeof S.daily!=="object")S.daily={};
   if(!Array.isArray(S.meas))S.meas=[];
   if(!S.sessions||typeof S.sessions!=="object")S.sessions={};
+  if(!Array.isArray(S.skips))S.skips=[];
   if(S.cal===undefined)S.cal=null;
   // carry old weekly check-ins over once
   if(!S.settings.migratedDaily){(S.checkins&&S.checkins.weeks||[]).forEach(e=>{if(e&&e.date&&e.weight>0&&!(S.daily[e.date]&&S.daily[e.date].w))S.daily[e.date]=Object.assign({},S.daily[e.date],{w:e.weight});if(e&&e.date&&e.waist>0)S.meas.push({date:e.date,waist:e.waist})});S.settings.migratedDaily=true}
@@ -667,9 +669,10 @@ function finishedPopup(day,week){const x=sessionStats(day,week);
   document.getElementById("sh-end").onclick=()=>endWorkout(day,week,false);document.getElementById("sh-no").onclick=closeSheet;
 }
 function renderHistory(){
-  const all=allSessions();const fmtD=t=>new Date(t).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
+  const all=allSessions().concat((S.skips||[]).map(x=>({skip:true,start:x.t,day:DAYS.find(d=>d.id===x.day)})).filter(x=>x.day)).sort((a,b)=>b.start-a.start);const fmtD=t=>new Date(t).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
   app.innerHTML=`<div class="top"><a class="iconbtn" href="#train" onclick="if(history.length>1){history.back();return false}" aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></a><div class="grow"><div class="sub">Shred Coach</div><h1>All workouts</h1></div>${GEAR_HTML}</div>
-  <div class="stack">${all.length?`<div class="small muted">${all.length} workout${all.length===1?"":"s"} logged</div>`+all.map(x=>{
+  <div class="stack">${all.length?`<div class="small muted">${all.filter(x=>!x.skip).length} workout${all.filter(x=>!x.skip).length===1?"":"s"} logged</div>`+all.map(x=>{
+    if(x.skip)return `<div class="card skiprow"><span><b>Day ${x.day.num} · ${esc(x.day.name)}</b> <span class="small muted">· ${fmtD(x.start)}</span></span><span class="small muted">Skipped</span></div>`;
     const byEx=[];x.sets.forEach(z=>{let g=byEx.find(q=>q.ex===z.ex);if(!g){g={ex:z.ex,sets:[]};byEx.push(g)}g.sets.push(z)});
     return `<details class="card hist"><summary><div><b>Day ${x.day.num} · ${esc(x.day.name)}</b><span class="small muted">${x.start?fmtD(x.start):""} · week ${x.week}</span></div>
       <span class="small muted hs">${x.sets.length} sets${x.mins!=null?" · "+x.mins+" min":""}${x.prs.length?" · 🏆"+x.prs.length:""}${x.early?" · ended early":""}</span></summary>
@@ -827,9 +830,25 @@ function suggestedDay(){
   const states=DAYS.map(d=>({d,st:dayState(d)}));
   const inprog=states.find(x=>x.st.saw>0&&!x.st.complete&&x.st.done>0);
   if(inprog)return inprog;
-  const lt=lastTrained(); if(!lt.day)return states[0];
-  const idx=DAYS.findIndex(d=>d.id===lt.day); return states[(idx+1)%DAYS.length];
+  const lt=lastTrained(), sk=lastSkip(); const last=(sk&&sk.t>lt.t)?sk.day:lt.day; if(!last)return states[0];
+  const idx=DAYS.findIndex(d=>d.id===last); return states[(idx+1)%DAYS.length];
 }
+/* ---------------- Skip a workout / rest today ---------------- */
+function lastSkip(){const a=(S.skips||[]);return a.length?a[a.length-1]:null}
+function skipWorkout(day){S.skips=(S.skips||[]).concat([{day:day.id,t:Date.now()}]);S.restDay=null;save("skips");closeSheet();location.hash="#train";render();
+  const nx=suggestedDay().d;toast("Skipped Day "+day.num+". Up next: Day "+nx.num+" · "+nx.name+".")}
+function undoSkip(){S.skips=(S.skips||[]).slice(0,-1);save("skips");render();toast("Skip undone.")}
+function restToday(){S.restDay=todayKey();save("skips");closeSheet();location.hash="#train";render();toast("Rest day. This workout waits for next time.")}
+function askSkip(day){const prev=(S.skips||[]).filter(x=>x.day===day.id).pop(),lt=lastTrained();
+  const again=prev&&!(Object.values(EX).some(e=>e.day===day.id&&Object.values((S.ex[e.id]&&S.ex[e.id].weeks)||{}).some(w=>(w||[]).some(x=>x&&x.t>prev.t))));
+  const nxt=DAYS[(DAYS.indexOf(day)+1)%DAYS.length];
+  sheet(`<h2>Skip Day ${day.num}?</h2><p class="small muted" style="margin:0 0 12px">${esc(day.name)}${again?` · you skipped it last time too, so these muscles are going 2 weeks without work`:""}</p>
+   <button class="btn wide" id="sk-rest" type="button">Rest today, do it next time</button>
+   <p class="small muted" style="margin:6px 0 12px">Keeps the rotation as is. Best if you're tired, sore or short on time.</p>
+   <button class="btn ghost wide" id="sk-skip" type="button">Skip it, go to Day ${nxt.num} · ${esc(nxt.name)}</button>
+   <p class="small muted" style="margin:6px 0 12px">Moves on. These muscles get trained again next week.</p>
+   <button class="btn ghost wide" id="sk-no" type="button">Cancel</button>`);
+  document.getElementById("sk-rest").onclick=restToday;document.getElementById("sk-skip").onclick=()=>skipWorkout(day);document.getElementById("sk-no").onclick=closeSheet}
 function render(){
   const r=route();
   document.querySelectorAll("#tabs a").forEach(a=>a.classList.toggle("on",a.dataset.tab===r||(r.startsWith("day")&&a.dataset.tab==="train")));
@@ -855,12 +874,17 @@ function todayNudge(){ensure();const k=todayKey(),d=S.daily[k]||{},sc=dayScore(k
 function renderHome(){
   const sug=suggestedDay(); const st=sug.st; const d=sug.d;
   const nx=st.next||(st.complete?null:st.rows[0]);
-  const hero = `<div class="card hero">
+  const resting=S.restDay===todayKey()&&st.done===0, sk=lastSkip(), canUndo=sk&&Date.now()-sk.t<24*3600e3&&lastTrained().t<sk.t;
+  const skDay=sk?DAYS.find(x=>x.id===sk.day):null;
+  const hero = resting?`<div class="card hero"><div class="label">Today</div><h2>Rest day</h2>
+     <div class="small muted">Up next time: Day ${d.num} · ${esc(d.name)}. Recovery is when you grow, so eat your protein and hit your steps.</div>
+     <div class="row-actions"><button class="btn ghost" id="unrest" type="button">Train anyway</button></div></div>`
+   : `<div class="card hero">${canUndo&&skDay?`<div class="small muted" style="margin-bottom:6px">Skipped Day ${skDay.num} · ${esc(skDay.name)}. <button class="linkbtn" id="undoskip" type="button">Undo</button></div>`:""}
      <div class="label">Up next · ${esc(d.dow)}</div>
      <h2>Day ${d.num} · ${esc(d.name)}</h2>
      <div class="small muted">Week ${st.dw} · ${st.done}/${st.total} sets logged</div>
      ${nx?`<div class="small"><b>${esc(nx.ex.name)}</b>, set ${nx.s+1}: <span class="num" style="font-size:20px;font-weight:700">${esc(fmtT(nx.tw,nx.tr,nx.ex.min,nx.ex.max))}</span></div>`:(st.complete?`<div class="small">Week ${st.saw} done. Next session targets are ready.</div>`:"")}
-     <div class="row-actions"><a class="btn" href="#day${d.num}" style="text-decoration:none">${st.done>0?"Continue workout":"Start workout"}</a></div>
+     <div class="row-actions"><a class="btn" href="#day${d.num}" style="text-decoration:none">${st.done>0?"Continue workout":"Start workout"}</a>${st.done===0?`<button class="btn ghost" id="skipw" type="button">Skip</button>`:""}</div>
    </div>`;
   const list=DAYS.map(dd=>{const s=dayState(dd);const pct=s.total?Math.round(s.done/s.total*100):0;
     return `<a class="day" href="#day${dd.num}" style="text-decoration:none;color:inherit">
@@ -871,6 +895,10 @@ function renderHome(){
    <div class="stack">${storeNote()}${hero}${focusLine()}${todayNudge()}
    <div class="label">Sessions · Thu and Sun off</div><div class="daylist">${list}</div>
    <a class="card focusline" href="#history" style="text-decoration:none;color:inherit;display:flex;justify-content:space-between;align-items:center"><span><b>All workouts</b> <span class="small muted">· ${allSessions().length} logged</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></a></div>`;
+  const g=id=>document.getElementById(id);
+  if(g("skipw"))g("skipw").onclick=()=>askSkip(d);
+  if(g("undoskip"))g("undoskip").onclick=undoSkip;
+  if(g("unrest"))g("unrest").onclick=()=>{S.restDay=null;save("skips");render()};
 }
 function renderDay(day){
   const st=dayState(day); const nx=st.next; const inprog=st.saw>0&&!st.expired&&!st.complete&&st.done>0;
@@ -883,10 +911,11 @@ function renderDay(day){
   app.innerHTML=`<div class="top"><a class="iconbtn" href="#train" aria-label="Back to sessions"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></a>
      <div class="grow"><div class="sub">Day ${day.num} · ${esc(day.dow)}</div><h1>${esc(day.name)}</h1></div><span class="chip accent">Week ${st.dw}</span><a class="iconbtn" href="#settings" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a></div>
    <div class="stack">${storeNote()}${inprog?`<button class="btn endbtn wide" id="endw" type="button">End workout · ${st.done}/${st.total} sets</button>`:""}${banner}${cards}
-   ${inprog?`<button class="btn endbtn wide" id="endw2" type="button">End workout</button>`:""}
+   ${inprog?`<button class="btn endbtn wide" id="endw2" type="button">End workout</button>`:(st.done===0?`<button class="btn ghost wide" id="skipd" type="button">Skip this workout</button>`:"")}
    <p class="note">A1 + A2 etc. are supersets: do 1, go straight to 2, rest ~90 s. Each pair uses one station: same machine, same cable tower or same bench. LP = 3–6 half reps in the stretch after failure.</p></div>`;
   bindDay(day,st);
   ["endw","endw2"].forEach(id=>{const b=document.getElementById(id);if(b)b.addEventListener("click",()=>askEnd(day))});
+  const sd=document.getElementById("skipd");if(sd)sd.addEventListener("click",()=>askSkip(day));
   if(UI.scrollNext){UI.scrollNext=false;const el=app.querySelector(".set.isnext");if(el)setTimeout(()=>el.scrollIntoView({block:"center",behavior:"smooth"}),50);}
 }
 function exCard(g,st){
